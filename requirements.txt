@@ -106,7 +106,7 @@ tomlkit==0.13.3
 tqdm==4.67.1
 translate==3.6.1
 ttkbootstrap==1.10.1
-ttkthemes==3.2.2
+
 typescript==0.0.12
 typing_extensions==4.12.2
 tzdata==2024.2
