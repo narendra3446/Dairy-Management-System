@@ -4,7 +4,8 @@ A full-featured dairy management web application built with Flask and SQLite
 """
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from flask_sqlalchemy import SQLAlchemy , inspect
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
