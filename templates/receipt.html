@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Receipt - Order #{{ order.id }}{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 2rem auto;">
+    <div class="card">
+        <h2 style="text-align: center; color: #667eea;">Order Receipt</h2>
+        
+        <div style="border-bottom: 2px solid #667eea; padding-bottom: 1rem; margin-bottom: 1rem;">
+            <p><strong>Order ID:</strong> #{{ order.id }}</p>
+            <p><strong>Customer:</strong> {{ order.user.username }}</p>
+            <p><strong>Email:</strong> {{ order.user.email }}</p>
+            <p><strong>Phone:</strong> {{ order.user.phone }}</p>
+            <p><strong>Address:</strong> {{ order.user.address }}</p>
+        </div>
+        
+        <div style="border-bottom: 2px solid #667eea; padding-bottom: 1rem; margin-bottom: 1rem;">
+            <p><strong>Order Date:</strong> {{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</p>
+            <p><strong>Delivery Date:</strong> {{ order.delivery_date.strftime('%d-%m-%Y') if order.delivery_date else 'TBD' }}</p>
+            <p><strong>Status:</strong> 
+                <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem; 
+                    {% if order.status == 'Completed' %}background-color: #d4edda; color: #155724;
+                    {% elif order.status == 'Pending' %}background-color: #fff3cd; color: #856404;
+                    {% else %}background-color: #f8d7da; color: #721c24;{% endif %}">
+                    {{ order.status }}
+                </span>
+            </p>
+        </div>
+        
+        <table class="table" style="margin-bottom: 1rem;">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in order.order_items %}
+                <tr>
+                    <td>{{ item.product.name }}</td>
+                    <td>{{ item.quantity }} {{ item.product.unit }}</td>
+                    <td>₹{{ item.price }}</td>
+                    <td>₹{{ item.subtotal }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div style="text-align: right; border-top: 2px solid #667eea; padding-top: 1rem;">
+            <h3>Total Amount: ₹{{ order.total_amount }}</h3>
+        </div>
+        
+        <div style="margin-top: 2rem; text-align: center;">
+            <button onclick="window.print()" class="btn btn-primary">Print Receipt</button>
+            <a href="{{ url_for('user_orders') }}" class="btn btn-primary" style="text-decoration: none;">Back to Orders</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

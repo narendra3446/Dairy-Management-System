@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block title %}User Dashboard - Dairy Management System{% endblock %}
+
+{% block content %}
+<h1>Available Products</h1>
+
+<div class="grid" style="margin: 2rem 0;">
+    {% for product in products %}
+    <div class="card">
+        <h3>{{ product.name }}</h3>
+        <p style="color: #666; margin: 0.5rem 0;">{{ product.description }}</p>
+        <p style="font-weight: bold; color: #667eea; font-size: 1.5rem; margin: 1rem 0;">₹{{ product.price }}/{{ product.unit }}</p>
+        <p style="color: #999;">Stock: {{ product.stock }} {{ product.unit }}</p>
+        
+        <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem;">
+            <input type="number" min="1" max="{{ product.stock }}" value="1" class="quantity-input" data-product-id="{{ product.id }}" style="width: 70px; padding: 0.5rem;">
+            <button class="btn btn-primary" onclick="addToCart({{ product.id }}, this)">Add to Cart</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h2>Shopping Cart</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Subtotal</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="cart-items">
+        </tbody>
+    </table>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+        <h3>Total: ₹<span id="cart-total">0</span></h3>
+        <button class="btn btn-success" onclick="checkout()" {% if not products %}disabled{% endif %}>Place Order</button>
+    </div>
+</div>
+
+<script>
+    let cart = [];
+    
+    function addToCart(productId, button) {
+        const input = button.parentElement.querySelector('.quantity-input');
+        const quantity = parseFloat(input.value);
+        const product = {{ products|tojson }}.find(p => p.id === productId);
+        
+        const existing = cart.find(item => item.product_id === productId);
+        if (existing) {
+            existing.quantity += quantity;
+        } else {
+            cart.push({
+                product_id: productId,
+                name: product.name,
+                price: product.price,
+                quantity: quantity
+            });
+        }
+        
+        updateCartDisplay();
+        alert('Added to cart!');
+    }
+    
+    function updateCartDisplay() {
+        const cartItems = document.getElementById('cart-items');
+        cartItems.innerHTML = '';
+        let total = 0;
+        
+        cart.forEach((item, index) => {
+            const subtotal = item.price * item.quantity;
+            total += subtotal;
+            
+            cartItems.innerHTML += `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>${item.quantity}</td>
+                    <td>₹${item.price}</td>
+                    <td>₹${subtotal}</td>
+                    <td><button class="btn btn-danger" onclick="removeFromCart(${index})">Remove</button></td>
+                </tr>
+            `;
+        });
+        
+        document.getElementById('cart-total').textContent = total.toFixed(2);
+    }
+    
+    function removeFromCart(index) {
+        cart.splice(index, 1);
+        updateCartDisplay();
+    }
+    
+    function checkout() {
+        if (cart.length === 0) {
+            alert('Cart is empty');
+            return;
+        }
+        
+        fetch('/user/place-order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ items: cart })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                cart = [];
+                updateCartDisplay();
+                window.location.href = '/user/receipt/' + data.order_id;
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => alert('Error placing order: ' + error));
+    }
+</script>
+{% endblock %}

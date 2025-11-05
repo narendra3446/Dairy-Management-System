@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Products Management - Dairy Management System{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>Product Management</h1>
+    <a href="{{ url_for('add_product') }}" class="btn btn-success">Add New Product</a>
+</div>
+
+{% if products %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Product Name</th>
+            <th>Description</th>
+            <th>Price</th>
+            <th>Stock</th>
+            <th>Unit</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for product in products %}
+        <tr>
+            <td>{{ product.name }}</td>
+            <td>{{ product.description or 'N/A' }}</td>
+            <td>₹{{ product.price }}</td>
+            <td>{{ product.stock }}</td>
+            <td>{{ product.unit }}</td>
+            <td>
+                <a href="{{ url_for('edit_product', product_id=product.id) }}" class="btn btn-primary" style="text-decoration: none; margin-right: 0.5rem;">Edit</a>
+                <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" style="display: inline; margin: 0;">
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure?')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="card" style="text-align: center;">
+    <p>No products yet. <a href="{{ url_for('add_product') }}">Add one now</a></p>
+</div>
+{% endif %}
+{% endblock %}

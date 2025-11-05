@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Product - Dairy Management System{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 2rem auto;">
+    <div class="card">
+        <h2>Add New Product</h2>
+        
+        <form method="POST">
+            <div class="form-group">
+                <label>Product Name</label>
+                <input type="text" name="name" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Price (₹)</label>
+                <input type="number" name="price" step="0.01" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Stock Quantity</label>
+                <input type="number" name="stock" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Unit</label>
+                <select name="unit" required>
+                    <option value="Liter">Liter (L)</option>
+                    <option value="kg">Kilogram (kg)</option>
+                    <option value="piece">Piece</option>
+                    <option value="bottle">Bottle</option>
+                    <option value="box">Box</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn btn-success" style="width: 100%;">Add Product</button>
+        </form>
+        
+        <a href="{{ url_for('admin_products') }}" style="display: inline-block; margin-top: 1rem; color: #667eea; text-decoration: none;">Back to Products</a>
+    </div>
+</div>
+{% endblock %}

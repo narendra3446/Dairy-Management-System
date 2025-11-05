@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - Dairy Management System{% endblock %}
+
+{% block content %}
+<h1>Admin Dashboard</h1>
+
+<div class="grid" style="margin: 2rem 0;">
+    <div class="stat-card">
+        <h3>Total Products</h3>
+        <div class="value">{{ total_products }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Total Users</h3>
+        <div class="value">{{ total_users }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Total Orders</h3>
+        <div class="value">{{ total_orders }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Total Revenue</h3>
+        <div class="value">₹{{ total_revenue }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Orders</h2>
+    
+    {% if recent_orders %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in recent_orders %}
+            <tr>
+                <td>#{{ order.id }}</td>
+                <td>{{ order.user.username }}</td>
+                <td>₹{{ order.total_amount }}</td>
+                <td>
+                    <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem;
+                        {% if order.status == 'Completed' %}background-color: #d4edda; color: #155724;
+                        {% elif order.status == 'Pending' %}background-color: #fff3cd; color: #856404;
+                        {% else %}background-color: #f8d7da; color: #721c24;{% endif %}">
+                        {{ order.status }}
+                    </span>
+                </td>
+                <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No orders yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
