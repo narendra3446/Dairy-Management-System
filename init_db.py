@@ -21,7 +21,7 @@ def init_database():
             admin_user = User(
                 username='admin',
                 email='admin@dairy.com',
-                password=generate_password_hash('admin123'),
+                password=generate_password_hash('N@3re4nd4ra6'),
                 phone='9999999999',
                 address='Dairy Admin Office',
                 is_admin=True
