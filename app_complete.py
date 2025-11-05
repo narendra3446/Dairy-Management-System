@@ -107,7 +107,9 @@ def admin_required(f):
     return decorated_function
 
 # ==================== AUTHENTICATION ROUTES ====================
-
+@app.route("/")
+def home():
+    return "Render Flask App Running ✅"
 @app.route('/')
 def index():
     if 'user_id' in session:
