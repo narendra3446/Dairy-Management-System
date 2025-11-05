@@ -399,6 +399,6 @@ def server_error(error):
 
 # ==================== RUN APPLICATION ====================
 
-if __name__ == '__main__':
-    debug = os.environ.get('ENV') != 'production'
-    app.run(debug=debug, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))  # Use the port Render provides
+    app.run(host="0.0.0.0", port=port)
