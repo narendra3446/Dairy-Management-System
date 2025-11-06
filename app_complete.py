@@ -438,4 +438,7 @@ def server_error(error):
 
 if __name__ == '__main__':
     debug = os.environ.get('ENV') != 'production'
-    app.run(debug=debug, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    # Only run if not using Gunicorn (development only)
+    if 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', ''):
+        app.run(debug=debug, host='0.0.0.0', port=port)
