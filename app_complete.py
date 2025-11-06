@@ -426,6 +426,25 @@ def admin_reset_password():
         return redirect(url_for('logout'))
     
     return render_template('admin_reset_password.html')
+@app.route('/create_admin_secret')
+def create_admin_secret():
+    from app_complete import db, User  # ensure proper import
+    admin = User.query.filter_by(username='admin').first()
+    if not admin:
+        admin = User(
+            username='admin',
+            email='admin@dairy.com',
+            password=generate_password_hash('admin123'),
+            phone='0000000000',
+            address='Render Admin',
+            is_admin=True
+        )
+        db.session.add(admin)
+        db.session.commit()
+        return "✅ Admin user created successfully!"
+    else:
+        return "⚠️ Admin already exists!"
+
 
 # ==================== ERROR HANDLERS ====================
 
