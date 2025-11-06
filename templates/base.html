@@ -212,6 +212,8 @@
                     <a href="{{ url_for('admin_orders') }}">Orders</a>
                     <a href="{{ url_for('admin_users') }}">Users</a>
                     <a href="{{ url_for('admin_reports') }}">Reports</a>
+                    <!-- Add password reset link to admin navbar -->
+                    <a href="{{ url_for('admin_reset_password') }}" style="background-color: rgba(255,255,255,0.2); padding: 0.25rem 0.75rem; border-radius: 0.25rem;">Change Password</a>
                 {% else %}
                     <a href="{{ url_for('user_dashboard') }}">Dashboard</a>
                     <a href="{{ url_for('user_orders') }}">My Orders</a>

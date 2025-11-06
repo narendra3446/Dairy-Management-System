@@ -3,7 +3,11 @@
 {% block title %}Admin Dashboard - Dairy Management System{% endblock %}
 
 {% block content %}
-<h1>Admin Dashboard</h1>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>Admin Dashboard</h1>
+    <!-- Add password reset link -->
+    <a href="{{ url_for('admin_reset_password') }}" style="padding: 0.5rem 1.5rem; background-color: #667eea; color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 600;">Change Password</a>
+</div>
 
 <div class="grid" style="margin: 2rem 0;">
     <div class="stat-card">

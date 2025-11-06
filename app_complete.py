@@ -5,7 +5,6 @@ A full-featured dairy management web application built with Flask and SQLite
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -81,14 +80,7 @@ class OrderItem(db.Model):
 
 # Create database tables
 with app.app_context():
-    inspector = inspect(db.engine)
-    existing_tables = inspector.get_table_names()
-    if not existing_tables:
-        print("No tables found — creating database schema...")
-        db.create_all()
-        print("Tables created successfully ✅")
-    else:
-        print("Database tables already exist — skipping create_all() ✅")
+    db.create_all()
 
 # ==================== DECORATORS ====================
 
@@ -115,9 +107,7 @@ def admin_required(f):
     return decorated_function
 
 # ==================== AUTHENTICATION ROUTES ====================
-@app.route("/")
-def home():
-    return "Render Flask App Running ✅"
+
 @app.route('/')
 def index():
     if 'user_id' in session:
@@ -397,6 +387,35 @@ def admin_reports():
                          products=products,
                          orders=orders)
 
+@app.route('/admin/reset-password', methods=['GET', 'POST'])
+@admin_required
+def admin_reset_password():
+    if request.method == 'POST':
+        old_password = request.form.get('old_password', '')
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        user = User.query.get(session['user_id'])
+        
+        if not check_password_hash(user.password, old_password):
+            flash('Old password is incorrect', 'danger')
+            return redirect(url_for('admin_reset_password'))
+        
+        if new_password != confirm_password:
+            flash('New passwords do not match', 'danger')
+            return redirect(url_for('admin_reset_password'))
+        
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters', 'danger')
+            return redirect(url_for('admin_reset_password'))
+        
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
+        flash('Password changed successfully! Please login again.', 'success')
+        return redirect(url_for('logout'))
+    
+    return render_template('admin_reset_password.html')
+
 # ==================== ERROR HANDLERS ====================
 
 @app.errorhandler(404)
@@ -409,6 +428,6 @@ def server_error(error):
 
 # ==================== RUN APPLICATION ====================
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # Use the port Render provides
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    debug = os.environ.get('ENV') != 'production'
+    app.run(debug=debug, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
