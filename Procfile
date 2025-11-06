@@ -1,1 +1,1 @@
-web: waitress-serve --port=$PORT --call app_complete:app
+web: python app_complete.py
