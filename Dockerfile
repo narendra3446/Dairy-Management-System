@@ -25,11 +25,11 @@ COPY . .
 RUN mkdir -p /app/instance
 
 # Expose port
-EXPOSE 5000
+EXPOSE $PORT
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:10000').read()" || exit 1
 
 # Run application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60", "wsgi:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "4", "--timeout", "60", "wsgi:app"]
