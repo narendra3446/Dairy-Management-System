@@ -5,6 +5,7 @@ A full-featured dairy management web application built with Flask and SQLite
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -80,7 +81,14 @@ class OrderItem(db.Model):
 
 # Create database tables
 with app.app_context():
-    db.create_all()
+    inspector = inspect(db.engine)
+    existing_tables = inspector.get_table_names()
+    if not existing_tables:
+        print("No tables found — creating database schema...")
+        db.create_all()
+        print("Tables created successfully ✅")
+    else:
+        print("Database tables already exist — skipping create_all() ✅")
 
 # ==================== DECORATORS ====================
 
