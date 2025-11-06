@@ -114,4 +114,4 @@ urllib3==2.3.0
 Werkzeug==2.3.0
 wheel==0.45.1
 wrapt==1.14.1
-waitress=3.0.2
+waitress==3.0.2
