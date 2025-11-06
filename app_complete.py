@@ -81,14 +81,17 @@ class OrderItem(db.Model):
 
 # Create database tables
 with app.app_context():
-    inspector = inspect(db.engine)
-    existing_tables = inspector.get_table_names()
-    if not existing_tables:
-        print("No tables found — creating database schema...")
-        db.create_all()
-        print("Tables created successfully ✅")
-    else:
-        print("Database tables already exist — skipping create_all() ✅")
+    try:
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        if not existing_tables:
+            print("No tables found — creating database schema...")
+            db.create_all()
+            print("Tables created successfully ✅")
+        else:
+            print("Database tables already exist — skipping create_all() ✅")
+    except Exception as e:
+        print(f"⚠️ Database initialization skipped due to: {e}")
 
 # ==================== DECORATORS ====================
 
