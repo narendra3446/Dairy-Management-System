@@ -440,8 +440,9 @@ def server_error(error):
 # ==================== RUN APPLICATION ====================
 
 if __name__ == '__main__':
-    debug = os.environ.get('ENV') != 'production'
-    port = int(os.environ.get('PORT', 5000))
-    # Only run if not using Gunicorn (development only)
-    if 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', ''):
-        app.run(debug=debug, host='0.0.0.0', port=port)
+    from waitress import serve
+    import os
+
+    port = int(os.environ.get("PORT", 10000))  # ✅ use Render's PORT variable
+    print(f"🚀 Starting server on port {port}...")
+    serve(app, host="0.0.0.0", port=port)
