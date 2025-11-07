@@ -21,7 +21,12 @@
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Login</button>
         </form>
         
+        <!-- Added forgot password and register links -->
         <p style="text-align: center; margin-top: 1rem;">
+            <a href="{{ url_for('forgot_password') }}" style="color: #667eea;">Forgot Password?</a>
+        </p>
+        
+        <p style="text-align: center;">
             Don't have an account? <a href="{{ url_for('register') }}" style="color: #667eea;">Register here</a>
         </p>
     </div>

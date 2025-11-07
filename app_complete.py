@@ -35,6 +35,8 @@ class User(db.Model):
     address = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reset_token = db.Column(db.String(255), unique=True, nullable=True)
+    reset_token_expiry = db.Column(db.DateTime, nullable=True)
     orders = db.relationship('Order', backref='user', lazy=True, cascade='all, delete-orphan')
 
 class Product(db.Model):
@@ -82,38 +84,39 @@ class OrderItem(db.Model):
 with app.app_context():
     db.create_all()
     
-    # Check if admin user exists, if not create default data
-    if User.query.filter_by(username='admin').first() is None:
-        print("Initializing default admin user and sample products...")
-        
-        # Create admin user
-        admin_user = User(
-            username='admin',
-            email='admin@dairymanagement.com',
-            password=generate_password_hash('admin123'),
-            phone='9999999999',
-            address='Dairy Management HQ',
-            is_admin=True
-        )
-        db.session.add(admin_user)
-        db.session.flush()
-        
-        # Create sample products
-        sample_products = [
-            Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
-            Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
-            Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
-            Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
-            Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
-            Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
-        ]
-        for product in sample_products:
-            db.session.add(product)
-        
-        db.session.commit()
-        print("Default admin user and sample products created successfully!")
-    else:
-        print("Database already initialized with data")
+    try:
+        if User.query.filter_by(username='admin').first() is None:
+            print("Initializing default admin user and sample products...")
+            
+            admin_user = User(
+                username='admin',
+                email='admin@dairymanagement.com',
+                password=generate_password_hash('admin123'),
+                phone='9999999999',
+                address='Dairy Management HQ',
+                is_admin=True
+            )
+            db.session.add(admin_user)
+            db.session.flush()
+            
+            sample_products = [
+                Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
+                Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
+                Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
+                Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
+                Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
+                Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
+            ]
+            for product in sample_products:
+                db.session.add(product)
+            
+            db.session.commit()
+            print("Default admin user and sample products created successfully!")
+        else:
+            print("Database already initialized with data")
+    except Exception as e:
+        print(f"[v0] Database initialization warning: {str(e)}")
+        db.session.rollback()
 
 # ==================== DECORATORS ====================
 
@@ -448,6 +451,59 @@ def admin_reset_password():
         return redirect(url_for('logout'))
     
     return render_template('admin_reset_password.html')
+
+# ==================== USER PASSWORD RESET ROUTES ====================
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        user = User.query.filter_by(email=email).first()
+        
+        if user:
+            # Generate reset token
+            import secrets
+            reset_token = secrets.token_urlsafe(32)
+            user.reset_token = reset_token
+            user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            db.session.commit()
+            flash('Password reset link sent to your email. Use the link below:', 'info')
+            reset_link = url_for('reset_password', token=reset_token, _external=True)
+            flash(f'Reset Link: {reset_link}', 'warning')
+            return redirect(url_for('login'))
+        else:
+            flash('Email not found', 'danger')
+    
+    return render_template('forgot_password.html')
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    user = User.query.filter_by(reset_token=token).first()
+    
+    if not user or user.reset_token_expiry < datetime.utcnow():
+        flash('Invalid or expired reset link', 'danger')
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        if new_password != confirm_password:
+            flash('Passwords do not match', 'danger')
+            return redirect(url_for('reset_password', token=token))
+        
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters', 'danger')
+            return redirect(url_for('reset_password', token=token))
+        
+        user.password = generate_password_hash(new_password)
+        user.reset_token = None
+        user.reset_token_expiry = None
+        db.session.commit()
+        flash('Password reset successfully! Please login with your new password.', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('reset_password.html')
 
 # ==================== ERROR HANDLERS ====================
 
