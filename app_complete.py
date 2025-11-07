@@ -9,6 +9,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
 import os
+import fcntl
+import time
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -80,43 +82,56 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     subtotal = db.Column(db.Float, nullable=False)
 
-# Create database tables
+# Create database tables with file lock to prevent race conditions
 with app.app_context():
     db.create_all()
     
+    lock_file = os.path.join(os.path.dirname(__file__), '.db_init.lock')
+    
     try:
-        if User.query.filter_by(username='admin').first() is None:
-            print("Initializing default admin user and sample products...")
-            
-            admin_user = User(
-                username='admin',
-                email='admin@dairymanagement.com',
-                password=generate_password_hash('admin123'),
-                phone='9999999999',
-                address='Dairy Management HQ',
-                is_admin=True
-            )
-            db.session.add(admin_user)
-            db.session.flush()
-            
-            sample_products = [
-                Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
-                Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
-                Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
-                Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
-                Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
-                Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
-            ]
-            for product in sample_products:
-                db.session.add(product)
-            
-            db.session.commit()
-            print("Default admin user and sample products created successfully!")
-        else:
-            print("Database already initialized with data")
+        with open(lock_file, 'w') as lock:
+            # Try to acquire exclusive lock (non-blocking)
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Lock acquired, this worker will initialize
+                
+                if User.query.filter_by(username='admin').first() is None:
+                    print("Initializing default admin user and sample products...")
+                    
+                    admin_user = User(
+                        username='admin',
+                        email='admin@dairymanagement.com',
+                        password=generate_password_hash('admin123'),
+                        phone='9999999999',
+                        address='Dairy Management HQ',
+                        is_admin=True
+                    )
+                    db.session.add(admin_user)
+                    db.session.flush()
+                    
+                    sample_products = [
+                        Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
+                        Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
+                        Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
+                        Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
+                        Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
+                        Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
+                    ]
+                    for product in sample_products:
+                        db.session.add(product)
+                    
+                    db.session.commit()
+                    print("Default admin user and sample products created successfully!")
+                else:
+                    print("Database already initialized with data")
+                
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            except (IOError, OSError):
+                # Lock not acquired, wait for other worker to initialize
+                print("Another worker is initializing database, waiting...")
+                time.sleep(2)
     except Exception as e:
-        print(f"[v0] Database initialization warning: {str(e)}")
-        db.session.rollback()
+        print(f"Database initialization error: {str(e)}")
 
 # ==================== DECORATORS ====================
 
