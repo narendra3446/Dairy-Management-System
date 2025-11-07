@@ -96,56 +96,59 @@ class InitFlag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     initialized = db.Column(db.Boolean, default=False)
 
-# Create database tables ONLY - no initialization
-with app.app_context():
-    db.create_all()
-    
-    init_flag = InitFlag.query.first()
-    
-    if not init_flag:
-        # First time - create the flag
-        init_flag = InitFlag(initialized=False)
-        db.session.add(init_flag)
-        db.session.commit()
-    
-    if not init_flag.initialized:
+# Create database tables ONLY when first request comes
+initialized = False
+
+@app.before_request
+def initialize_db():
+    global initialized
+    if not initialized:
         try:
-            # Only initialize if not already done
-            if User.query.filter_by(username='admin').first() is None:
-                print("Initializing default admin user and sample products...")
+            with app.app_context():
+                db.create_all()
                 
-                admin_user = User(
-                    username='admin',
-                    email='admin@dairymanagement.com',
-                    password=generate_password_hash('admin123'),
-                    phone='9999999999',
-                    address='Dairy Management HQ',
-                    is_admin=True
-                )
-                db.session.add(admin_user)
-                db.session.flush()
+                if InitFlag.query.first() is None:
+                    init_flag = InitFlag(initialized=False)
+                    db.session.add(init_flag)
+                    db.session.commit()
+                else:
+                    init_flag = InitFlag.query.first()
                 
-                sample_products = [
-                    Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
-                    Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
-                    Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
-                    Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
-                    Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
-                    Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
-                ]
-                for product in sample_products:
-                    db.session.add(product)
-                
-                # Mark initialization as complete
-                init_flag.initialized = True
-                
-                db.session.commit()
-                print("Default admin user and sample products created successfully!")
-            else:
-                # Admin already exists, just mark as initialized
-                init_flag.initialized = True
-                db.session.commit()
-                print("Database already initialized with data")
+                if not init_flag.initialized:
+                    if User.query.filter_by(username='admin').first() is None:
+                        print("Initializing default admin user and sample products...")
+                        
+                        admin_user = User(
+                            username='admin',
+                            email='admin@dairymanagement.com',
+                            password=generate_password_hash('admin123'),
+                            phone='9999999999',
+                            address='Dairy Management HQ',
+                            is_admin=True
+                        )
+                        db.session.add(admin_user)
+                        db.session.flush()
+                        
+                        sample_products = [
+                            Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
+                            Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
+                            Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
+                            Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
+                            Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
+                            Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
+                        ]
+                        for product in sample_products:
+                            db.session.add(product)
+                        
+                        init_flag.initialized = True
+                        db.session.commit()
+                        print("Default admin user and sample products created successfully!")
+                    else:
+                        # Admin already exists, mark as initialized
+                        init_flag.initialized = True
+                        db.session.commit()
+            
+            initialized = True
         except Exception as e:
             print(f"Database initialization error: {str(e)}")
             db.session.rollback()
