@@ -5,6 +5,7 @@ A full-featured dairy management web application built with Flask and SQLite
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -22,8 +23,16 @@ app.config['SESSION_COOKIE_SECURE'] = os.environ.get('ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
-# Initialize SQLAlchemy
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', True)
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@dairymanagement.com')
+
+# Initialize SQLAlchemy and Mail
 db = SQLAlchemy(app)
+mail = Mail(app)
 
 # ==================== DATABASE MODELS ====================
 
@@ -469,6 +478,45 @@ def admin_reset_password():
 
 # ==================== USER PASSWORD RESET ROUTES ====================
 
+def send_password_reset_email(user_email, reset_token):
+    """Send password reset email to user"""
+    try:
+        reset_link = url_for('reset_password', token=reset_token, _external=True)
+        msg = Message(
+            subject='Dairy Management - Password Reset Request',
+            recipients=[user_email],
+            html=f'''
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0;">Dairy Management System</h1>
+                </div>
+                <div style="background: #fefae0; padding: 30px; border-radius: 0 0 8px 8px;">
+                    <p style="color: #333; font-size: 16px;">Hello,</p>
+                    <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                        We received a request to reset your password. Click the button below to create a new password.
+                    </p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{reset_link}" style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                            Reset Password
+                        </a>
+                    </div>
+                    <p style="color: #666; font-size: 12px;">
+                        If you didn't request a password reset, ignore this email. The link above will expire in 1 hour.
+                    </p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                    <p style="color: #999; font-size: 12px; text-align: center;">
+                        © 2025 Dairy Management System. All rights reserved.
+                    </p>
+                </div>
+            </div>
+            '''
+        )
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
+        return False
+
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
@@ -476,18 +524,24 @@ def forgot_password():
         user = User.query.filter_by(email=email).first()
         
         if user:
-            # Generate reset token
             import secrets
             reset_token = secrets.token_urlsafe(32)
             user.reset_token = reset_token
             user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
             db.session.commit()
-            flash('Password reset link sent to your email. Use the link below:', 'info')
-            reset_link = url_for('reset_password', token=reset_token, _external=True)
-            flash(f'Reset Link: {reset_link}', 'warning')
+            
+            # Try to send email
+            if send_password_reset_email(user.email, reset_token):
+                flash('Password reset link has been sent to your email!', 'success')
+            else:
+                # Fallback: show link if email fails (for development)
+                reset_link = url_for('reset_password', token=reset_token, _external=True)
+                flash('Email could not be sent. Here is your reset link (1 hour expiry):', 'warning')
+                flash(f'Reset Link: {reset_link}', 'info')
+            
             return redirect(url_for('login'))
         else:
-            flash('Email not found', 'danger')
+            flash('Email not found in our system', 'danger')
     
     return render_template('forgot_password.html')
 

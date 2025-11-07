@@ -2,55 +2,245 @@
 
 {% block title %}User Dashboard - Dairy Management System{% endblock %}
 
-{% block content %}
-<h1>Available Products</h1>
+{% block extra_css %}
+<style>
+    .dashboard-header {
+        margin-bottom: 3rem;
+    }
 
-<div class="grid" style="margin: 2rem 0;">
+    .dashboard-header h1 {
+        font-size: 2.5rem;
+        color: white;
+        margin-bottom: 0.5rem;
+        font-family: 'Poppins', sans-serif;
+        font-weight: 700;
+    }
+
+    .dashboard-header p {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 1.1rem;
+    }
+
+    .product-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 2rem;
+        margin-bottom: 3rem;
+    }
+
+    .product-card {
+        background: white;
+        border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(82, 183, 136, 0.1);
+    }
+
+    .product-card:hover {
+        transform: translateY(-8px);
+        box-shadow: var(--shadow-hover);
+    }
+
+    .product-card-header {
+        background: linear-gradient(135deg, #2d5016 0%, #52b788 100%);
+        color: white;
+        padding: 1.5rem;
+        height: 150px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4rem;
+        text-align: center;
+    }
+
+    .product-card-body {
+        padding: 1.5rem;
+    }
+
+    .product-card h3 {
+        font-size: 1.3rem;
+        color: #2d5016;
+        margin-bottom: 0.5rem;
+        font-family: 'Poppins', sans-serif;
+        font-weight: 700;
+    }
+
+    .product-card p {
+        color: #666;
+        font-size: 0.95rem;
+        margin: 0.5rem 0;
+    }
+
+    .product-price {
+        font-weight: 700;
+        color: #52b788;
+        font-size: 1.5rem;
+        margin: 1rem 0;
+        font-family: 'Poppins', sans-serif;
+    }
+
+    .product-stock {
+        color: #8b6f47;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .product-actions {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .product-actions input {
+        width: 80px;
+        padding: 0.6rem;
+        border: 2px solid #e0e0e0;
+        border-radius: 0.5rem;
+        text-align: center;
+    }
+
+    .product-actions button {
+        flex: 1;
+    }
+
+    .cart-section {
+        margin-top: 3rem;
+    }
+
+    .cart-card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 1rem;
+        padding: 2rem;
+        box-shadow: var(--shadow);
+        border: 1px solid rgba(82, 183, 136, 0.1);
+    }
+
+    .cart-card h2 {
+        color: #2d5016;
+        margin-bottom: 1.5rem;
+        font-family: 'Poppins', sans-serif;
+        font-size: 1.8rem;
+    }
+
+    .cart-empty {
+        text-align: center;
+        padding: 2rem;
+        color: #999;
+    }
+
+    .cart-total-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid #e0e0e0;
+    }
+
+    .cart-total {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #2d5016;
+        font-family: 'Poppins', sans-serif;
+    }
+
+    .cart-total span {
+        color: #52b788;
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-header h1 {
+            font-size: 1.8rem;
+        }
+
+        .product-grid {
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        .cart-total-section {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>🥛 Your Dairy Store</h1>
+    <p>Browse our fresh dairy products and place your order</p>
+</div>
+
+<div class="product-grid">
+    {% set icons = {'Milk': '🥛', 'Yogurt': '🍨', 'Buttermilk': '🥤', 'Paneer': '🧀', 'Ghee': '✨', 'Cheese': '🧀'} %}
     {% for product in products %}
-    <div class="card">
-        <h3>{{ product.name }}</h3>
-        <p style="color: #666; margin: 0.5rem 0;">{{ product.description }}</p>
-        <p style="font-weight: bold; color: #667eea; font-size: 1.5rem; margin: 1rem 0;">₹{{ product.price }}/{{ product.unit }}</p>
-        <p style="color: #999;">Stock: {{ product.stock }} {{ product.unit }}</p>
-        
-        <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem;">
-            <input type="number" min="1" max="{{ product.stock }}" value="1" class="quantity-input" data-product-id="{{ product.id }}" style="width: 70px; padding: 0.5rem;">
-            <button class="btn btn-primary" onclick="addToCart({{ product.id }}, this)">Add to Cart</button>
+    <div class="product-card">
+        <div class="product-card-header">
+            {{ icons.get(product.name, '🐄') }}
+        </div>
+        <div class="product-card-body">
+            <h3>{{ product.name }}</h3>
+            <p>{{ product.description }}</p>
+            <div class="product-price">₹{{ product.price }}/{{ product.unit }}</div>
+            <div class="product-stock">📦 Stock: {{ product.stock }} {{ product.unit }} available</div>
+            
+            <div class="product-actions">
+                <input type="number" min="1" max="{{ product.stock }}" value="1" class="quantity-input" data-product-id="{{ product.id }}">
+                <button class="btn btn-primary" onclick="addToCart({{ product.id }}, this)" {% if product.stock == 0 %}disabled{% endif %}>Add to Cart</button>
+            </div>
         </div>
     </div>
     {% endfor %}
 </div>
 
-<div class="card">
-    <h2>Shopping Cart</h2>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Product</th>
-                <th>Quantity</th>
-                <th>Price</th>
-                <th>Subtotal</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody id="cart-items">
-        </tbody>
-    </table>
-    
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
-        <h3>Total: ₹<span id="cart-total">0</span></h3>
-        <button class="btn btn-success" onclick="checkout()" {% if not products %}disabled{% endif %}>Place Order</button>
+<div class="cart-section">
+    <div class="cart-card">
+        <h2>🛒 Shopping Cart</h2>
+        
+        <div id="cart-empty" class="cart-empty" style="display: none;">
+            Your cart is empty. Start shopping!
+        </div>
+
+        <table class="table" id="cart-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Subtotal</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="cart-items">
+            </tbody>
+        </table>
+
+        <div class="cart-total-section">
+            <div class="cart-total" id="total-container" style="display: none;">
+                Total: <span id="cart-total">0</span>
+            </div>
+            <button class="btn btn-success" onclick="checkout()" id="checkout-btn" style="display: none;">Place Order</button>
+        </div>
     </div>
 </div>
 
 <script>
     let cart = [];
-    
+
     function addToCart(productId, button) {
         const input = button.parentElement.querySelector('.quantity-input');
         const quantity = parseFloat(input.value);
         const product = {{ products|tojson }}.find(p => p.id === productId);
-        
+
+        if (quantity > product.stock) {
+            alert('Not enough stock available');
+            return;
+        }
+
         const existing = cart.find(item => item.product_id === productId);
         if (existing) {
             existing.quantity += quantity;
@@ -62,45 +252,63 @@
                 quantity: quantity
             });
         }
-        
+
         updateCartDisplay();
-        alert('Added to cart!');
+        input.value = 1;
     }
-    
+
     function updateCartDisplay() {
         const cartItems = document.getElementById('cart-items');
+        const cartTable = document.getElementById('cart-table');
+        const cartEmpty = document.getElementById('cart-empty');
+        const totalContainer = document.getElementById('total-container');
+        const checkoutBtn = document.getElementById('checkout-btn');
+
+        if (cart.length === 0) {
+            cartTable.style.display = 'none';
+            cartEmpty.style.display = 'block';
+            totalContainer.style.display = 'none';
+            checkoutBtn.style.display = 'none';
+            return;
+        }
+
+        cartTable.style.display = 'table';
+        cartEmpty.style.display = 'none';
+        totalContainer.style.display = 'block';
+        checkoutBtn.style.display = 'block';
+
         cartItems.innerHTML = '';
         let total = 0;
-        
+
         cart.forEach((item, index) => {
             const subtotal = item.price * item.quantity;
             total += subtotal;
-            
+
             cartItems.innerHTML += `
                 <tr>
-                    <td>${item.name}</td>
+                    <td><strong>${item.name}</strong></td>
                     <td>${item.quantity}</td>
                     <td>₹${item.price}</td>
-                    <td>₹${subtotal}</td>
+                    <td>₹${subtotal.toFixed(2)}</td>
                     <td><button class="btn btn-danger" onclick="removeFromCart(${index})">Remove</button></td>
                 </tr>
             `;
         });
-        
-        document.getElementById('cart-total').textContent = total.toFixed(2);
+
+        document.getElementById('cart-total').textContent = '₹' + total.toFixed(2);
     }
-    
+
     function removeFromCart(index) {
         cart.splice(index, 1);
         updateCartDisplay();
     }
-    
+
     function checkout() {
         if (cart.length === 0) {
             alert('Cart is empty');
             return;
         }
-        
+
         fetch('/user/place-order', {
             method: 'POST',
             headers: {
@@ -121,5 +329,7 @@
         })
         .catch(error => alert('Error placing order: ' + error));
     }
+
+    updateCartDisplay();
 </script>
 {% endblock %}
