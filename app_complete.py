@@ -66,7 +66,7 @@ def get_user_by_email(email):
 
 # ----------------- Initialization (one-time) -----------------
 
-@app.before_first_request
+@app.first_request
 def initialize_db():
     """
     Creates an init flag in Mongo and a default admin + sample products the first time.
