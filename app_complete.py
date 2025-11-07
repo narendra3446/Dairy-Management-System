@@ -1,23 +1,24 @@
 """
-Dairy Management System - Complete Application
-A full-featured dairy management web application built with Flask and SQLite
+Dairy Management System - MongoDB version
 """
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
+from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
 import os
-import fcntl
-import time
+import secrets
 
 # Initialize Flask app
 app = Flask(__name__)
+
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///dairy_management.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# MongoDB connection (set MONGO_URI in environment for production)
+app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/dairy_db')
+
 app.config['JSON_SORT_KEYS'] = False
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -25,135 +26,97 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', True)
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True') in ['True', 'true', '1']
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@dairymanagement.com')
 
-# Initialize SQLAlchemy and Mail
-db = SQLAlchemy(app)
+# Initialize Mail and PyMongo
 mail = Mail(app)
+mongo_client = PyMongo(app)
+db = mongo_client.db  # shorthand
 
-# ==================== DATABASE MODELS ====================
+# ----------------- Helpers -----------------
 
-class User(db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    phone = db.Column(db.String(10), nullable=False)
-    address = db.Column(db.String(255), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    reset_token = db.Column(db.String(255), unique=True, nullable=True)
-    reset_token_expiry = db.Column(db.DateTime, nullable=True)
-    orders = db.relationship('Order', backref='user', lazy=True, cascade='all, delete-orphan')
+def objid_to_str(doc):
+    """Convert _id ObjectId to string for jsonify/template use."""
+    if not doc:
+        return None
+    doc['_id'] = str(doc['_id'])
+    return doc
 
-class Product(db.Model):
-    __tablename__ = 'products'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    description = db.Column(db.String(255))
-    price = db.Column(db.Float, nullable=False)
-    stock = db.Column(db.Integer, default=0)
-    unit = db.Column(db.String(50), default='Liter')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    order_items = db.relationship('OrderItem', backref='product', lazy=True, cascade='all, delete-orphan')
+def convert_products_cursor(cursor):
+    out = []
+    for p in cursor:
+        p['_id'] = str(p['_id'])
+        # keep created_at serializable
+        if 'created_at' in p and isinstance(p['created_at'], datetime):
+            p['created_at'] = p['created_at'].isoformat()
+        out.append(p)
+    return out
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'description': self.description,
-            'price': self.price,
-            'stock': self.stock,
-            'unit': self.unit,
-            'created_at': self.created_at.isoformat() if self.created_at else None
-        }
+def get_user_by_id(user_id_str):
+    try:
+        return db.users.find_one({"_id": ObjectId(user_id_str)})
+    except Exception:
+        return None
 
-class Order(db.Model):
-    __tablename__ = 'orders'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    total_amount = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default='Pending')
-    order_date = db.Column(db.DateTime, default=datetime.utcnow)
-    delivery_date = db.Column(db.DateTime)
-    order_items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
+def get_user_by_email(email):
+    return db.users.find_one({"email": email})
 
-class OrderItem(db.Model):
-    __tablename__ = 'order_items'
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    quantity = db.Column(db.Float, nullable=False)
-    price = db.Column(db.Float, nullable=False)
-    subtotal = db.Column(db.Float, nullable=False)
+# ----------------- Initialization (one-time) -----------------
 
-class InitFlag(db.Model):
-    __tablename__ = 'init_flags'
-    id = db.Column(db.Integer, primary_key=True)
-    initialized = db.Column(db.Boolean, default=False)
-
-# Create database tables ONLY when first request comes
-initialized = False
-
-@app.before_request
+@app.before_first_request
 def initialize_db():
-    global initialized
-    if not initialized:
-        try:
-            with app.app_context():
-                db.create_all()
-                
-                if InitFlag.query.first() is None:
-                    init_flag = InitFlag(initialized=False)
-                    db.session.add(init_flag)
-                    db.session.commit()
-                else:
-                    init_flag = InitFlag.query.first()
-                
-                if not init_flag.initialized:
-                    if User.query.filter_by(username='admin').first() is None:
-                        print("Initializing default admin user and sample products...")
-                        
-                        admin_user = User(
-                            username='admin',
-                            email='admin@dairymanagement.com',
-                            password=generate_password_hash('admin123'),
-                            phone='9999999999',
-                            address='Dairy Management HQ',
-                            is_admin=True
-                        )
-                        db.session.add(admin_user)
-                        db.session.flush()
-                        
-                        sample_products = [
-                            Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
-                            Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
-                            Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
-                            Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
-                            Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
-                            Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
-                        ]
-                        for product in sample_products:
-                            db.session.add(product)
-                        
-                        init_flag.initialized = True
-                        db.session.commit()
-                        print("Default admin user and sample products created successfully!")
-                    else:
-                        # Admin already exists, mark as initialized
-                        init_flag.initialized = True
-                        db.session.commit()
-            
-            initialized = True
-        except Exception as e:
-            print(f"Database initialization error: {str(e)}")
-            db.session.rollback()
+    """
+    Creates an init flag in Mongo and a default admin + sample products the first time.
+    Safe to run repeatedly — it checks existence and won't duplicate.
+    """
+    try:
+        # check init flag
+        init_flag = db.init_flags.find_one({})
+        if not init_flag:
+            db.init_flags.insert_one({"initialized": False, "created_at": datetime.utcnow()})
+            init_flag = db.init_flags.find_one({})
 
-# ==================== DECORATORS ====================
+        if not init_flag.get("initialized", False):
+            admin_email = 'admin@dairymanagement.com'
+            if not db.users.find_one({"email": admin_email}):
+                print("Initializing default admin user and sample products...")
+
+                admin_user = {
+                    "username": "admin",
+                    "email": admin_email,
+                    "password": generate_password_hash("admin123"),
+                    "phone": "9999999999",
+                    "address": "Dairy Management HQ",
+                    "is_admin": True,
+                    "created_at": datetime.utcnow(),
+                    "reset_token": None,
+                    "reset_token_expiry": None
+                }
+                db.users.insert_one(admin_user)
+
+                sample_products = [
+                    {"name": "Milk (1L)", "description": "Fresh whole milk", "price": 50.0, "stock": 100, "unit": "Liter", "created_at": datetime.utcnow()},
+                    {"name": "Yogurt (500ml)", "description": "Creamy yogurt", "price": 80.0, "stock": 75, "unit": "ml", "created_at": datetime.utcnow()},
+                    {"name": "Buttermilk (1L)", "description": "Fresh buttermilk", "price": 40.0, "stock": 50, "unit": "Liter", "created_at": datetime.utcnow()},
+                    {"name": "Paneer (500g)", "description": "Fresh cottage cheese", "price": 250.0, "stock": 30, "unit": "grams", "created_at": datetime.utcnow()},
+                    {"name": "Ghee (500ml)", "description": "Pure clarified butter", "price": 500.0, "stock": 20, "unit": "ml", "created_at": datetime.utcnow()},
+                    {"name": "Cheese (200g)", "description": "Processed cheese", "price": 150.0, "stock": 40, "unit": "grams", "created_at": datetime.utcnow()},
+                ]
+                db.products.insert_many(sample_products)
+
+            # mark initialized
+            db.init_flags.update_one({"_id": init_flag["_id"]}, {"$set": {"initialized": True, "updated_at": datetime.utcnow()}})
+            print("Default admin user and sample products created successfully!")
+        else:
+            # already initialized
+            pass
+    except Exception as e:
+        print(f"Initialization error: {str(e)}")
+
+# ----------------- Decorators -----------------
 
 def login_required(f):
     @wraps(f)
@@ -170,20 +133,20 @@ def admin_required(f):
         if 'user_id' not in session:
             flash('Please login first', 'danger')
             return redirect(url_for('login'))
-        user = User.query.get(session['user_id'])
-        if not user or not user.is_admin:
+        user = get_user_by_id(session['user_id'])
+        if not user or not user.get('is_admin', False):
             flash('Admin access required', 'danger')
             return redirect(url_for('user_dashboard') if user else url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
-# ==================== AUTHENTICATION ROUTES ====================
+# ----------------- Auth routes -----------------
 
 @app.route('/')
 def index():
     if 'user_id' in session:
-        user = User.query.get(session['user_id'])
-        if user.is_admin:
+        user = get_user_by_id(session['user_id'])
+        if user and user.get('is_admin'):
             return redirect(url_for('admin_dashboard'))
         else:
             return redirect(url_for('user_dashboard'))
@@ -202,24 +165,26 @@ def register():
             flash('All fields are required', 'danger')
             return redirect(url_for('register'))
 
-        if User.query.filter_by(username=username).first():
+        if db.users.find_one({"username": username}):
             flash('Username already exists', 'danger')
             return redirect(url_for('register'))
 
-        if User.query.filter_by(email=email).first():
+        if db.users.find_one({"email": email}):
             flash('Email already exists', 'danger')
             return redirect(url_for('register'))
 
-        new_user = User(
-            username=username,
-            email=email,
-            password=generate_password_hash(password),
-            phone=phone,
-            address=address,
-            is_admin=False
-        )
-        db.session.add(new_user)
-        db.session.commit()
+        new_user = {
+            "username": username,
+            "email": email,
+            "password": generate_password_hash(password),
+            "phone": phone,
+            "address": address,
+            "is_admin": False,
+            "created_at": datetime.utcnow(),
+            "reset_token": None,
+            "reset_token_expiry": None
+        }
+        result = db.users.insert_one(new_user)
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html')
@@ -230,13 +195,13 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):
-            session['user_id'] = user.id
-            session['username'] = user.username
-            session['is_admin'] = user.is_admin
+        user = db.users.find_one({"username": username})
+        if user and check_password_hash(user['password'], password):
+            session['user_id'] = str(user['_id'])
+            session['username'] = user['username']
+            session['is_admin'] = user.get('is_admin', False)
             flash('Login successful!', 'success')
-            if user.is_admin:
+            if user.get('is_admin', False):
                 return redirect(url_for('admin_dashboard'))
             else:
                 return redirect(url_for('user_dashboard'))
@@ -250,109 +215,150 @@ def logout():
     flash('Logged out successfully', 'success')
     return redirect(url_for('login'))
 
-# ==================== USER ROUTES ====================
+# ----------------- User routes -----------------
 
 @app.route('/user/dashboard')
 @login_required
 def user_dashboard():
-    user = User.query.get(session['user_id'])
-    if user.is_admin:
+    user = get_user_by_id(session['user_id'])
+    if user and user.get('is_admin'):
         return redirect(url_for('admin_dashboard'))
-    
-    products = Product.query.filter(Product.stock > 0).all()
-    products_dict = [p.to_dict() for p in products]
-    return render_template('user_dashboard.html', products=products_dict, user=user)
+
+    products_cursor = db.products.find({"stock": {"$gt": 0}})
+    products = convert_products_cursor(products_cursor)
+    return render_template('user_dashboard.html', products=products, user=user)
 
 @app.route('/user/place-order', methods=['POST'])
 @login_required
 def place_order():
     data = request.get_json()
     items = data.get('items', [])
-    
+
     if not items:
         return jsonify({'success': False, 'message': 'No items selected'}), 400
 
-    total_amount = 0
-    order_items_list = []
+    total_amount = 0.0
+    order_items = []
 
+    # Validate items and compute totals
     for item in items:
-        product = Product.query.get(item['product_id'])
-        if not product:
+        try:
+            prod = db.products.find_one({"_id": ObjectId(item['product_id'])})
+        except Exception:
+            return jsonify({'success': False, 'message': 'Invalid product id'}), 400
+        if not prod:
             return jsonify({'success': False, 'message': 'Product not found'}), 400
-        if product.stock < item['quantity']:
-            return jsonify({'success': False, 'message': f'Insufficient stock for {product.name}'}), 400
-        
-        subtotal = product.price * item['quantity']
+        if prod.get('stock', 0) < item['quantity']:
+            return jsonify({'success': False, 'message': f"Insufficient stock for {prod['name']}"}), 400
+
+        subtotal = float(prod['price']) * float(item['quantity'])
         total_amount += subtotal
-        order_items_list.append({
-            'product': product,
-            'quantity': item['quantity'],
-            'subtotal': subtotal
+        order_items.append({
+            "product_id": prod['_id'],
+            "product_name": prod['name'],
+            "quantity": item['quantity'],
+            "price": float(prod['price']),
+            "subtotal": subtotal
         })
 
     # Create order
-    new_order = Order(
-        user_id=session['user_id'],
-        total_amount=total_amount,
-        status='Pending',
-        delivery_date=datetime.utcnow() + timedelta(days=1)
-    )
-    db.session.add(new_order)
-    db.session.flush()
+    order_doc = {
+        "user_id": ObjectId(session['user_id']),
+        "total_amount": total_amount,
+        "status": "Pending",
+        "order_date": datetime.utcnow(),
+        "delivery_date": datetime.utcnow() + timedelta(days=1),
+        "items": order_items
+    }
+    order_result = db.orders.insert_one(order_doc)
 
-    # Add order items and update stock
-    for item in order_items_list:
-        order_item = OrderItem(
-            order_id=new_order.id,
-            product_id=item['product'].id,
-            quantity=item['quantity'],
-            price=item['product'].price,
-            subtotal=item['subtotal']
-        )
-        item['product'].stock -= item['quantity']
-        db.session.add(order_item)
+    # Update product stock
+    for it in order_items:
+        db.products.update_one({"_id": it['product_id']}, {"$inc": {"stock": -int(it['quantity'])}})
 
-    db.session.commit()
-    return jsonify({'success': True, 'message': 'Order placed successfully', 'order_id': new_order.id})
+    return jsonify({'success': True, 'message': 'Order placed successfully', 'order_id': str(order_result.inserted_id)})
 
 @app.route('/user/orders')
 @login_required
 def user_orders():
-    user = User.query.get(session['user_id'])
-    orders = Order.query.filter_by(user_id=user.id).order_by(Order.order_date.desc()).all()
+    user = get_user_by_id(session['user_id'])
+    orders_cursor = db.orders.find({"user_id": ObjectId(session['user_id'])}).sort("order_date", -1)
+    orders = []
+    for o in orders_cursor:
+        o['_id'] = str(o['_id'])
+        # convert any ObjectIds in items if present
+        for it in o.get('items', []):
+            if isinstance(it.get('product_id'), ObjectId):
+                it['product_id'] = str(it['product_id'])
+        # serializable dates
+        if isinstance(o.get('order_date'), datetime):
+            o['order_date'] = o['order_date'].isoformat()
+        if isinstance(o.get('delivery_date'), datetime):
+            o['delivery_date'] = o['delivery_date'].isoformat()
+        orders.append(o)
     return render_template('user_orders.html', orders=orders, user=user)
 
-@app.route('/user/receipt/<int:order_id>')
+@app.route('/user/receipt/<order_id>')
 @login_required
 def user_receipt(order_id):
-    order = Order.query.get_or_404(order_id)
-    if order.user_id != session['user_id']:
+    try:
+        order = db.orders.find_one({"_id": ObjectId(order_id)})
+    except Exception:
+        flash('Invalid order', 'danger')
+        return redirect(url_for('user_dashboard'))
+
+    if not order:
+        flash('Order not found', 'danger')
+        return redirect(url_for('user_dashboard'))
+
+    if str(order['user_id']) != session['user_id']:
         flash('Unauthorized', 'danger')
         return redirect(url_for('user_dashboard'))
+
+    # convert for template
+    order['_id'] = str(order['_id'])
+    if isinstance(order.get('order_date'), datetime):
+        order['order_date'] = order['order_date'].isoformat()
+    if isinstance(order.get('delivery_date'), datetime):
+        order['delivery_date'] = order['delivery_date'].isoformat()
+    for it in order.get('items', []):
+        if isinstance(it.get('product_id'), ObjectId):
+            it['product_id'] = str(it['product_id'])
     return render_template('receipt.html', order=order)
 
-# ==================== ADMIN ROUTES ====================
+# ----------------- Admin routes -----------------
 
 @app.route('/admin/dashboard')
 @admin_required
 def admin_dashboard():
-    total_products = Product.query.count()
-    total_users = User.query.filter_by(is_admin=False).count()
-    total_orders = Order.query.count()
-    total_revenue = db.session.query(db.func.sum(Order.total_amount)).scalar() or 0
-    recent_orders = Order.query.order_by(Order.order_date.desc()).limit(10).all()
-    
-    return render_template('admin_dashboard.html', 
-                         total_products=total_products,
-                         total_users=total_users,
-                         total_orders=total_orders,
-                         total_revenue=total_revenue,
-                         recent_orders=recent_orders)
+    total_products = db.products.count_documents({})
+    total_users = db.users.count_documents({"is_admin": False})
+    total_orders = db.orders.count_documents({})
+    # total revenue using aggregation
+    agg = db.orders.aggregate([{"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}])
+    total_revenue = 0.0
+    for r in agg:
+        total_revenue = r.get('total', 0.0)
+    recent_orders_cursor = db.orders.find().sort("order_date", -1).limit(10)
+    recent_orders = []
+    for o in recent_orders_cursor:
+        o['_id'] = str(o['_id'])
+        if isinstance(o.get('order_date'), datetime):
+            o['order_date'] = o['order_date'].isoformat()
+        recent_orders.append(o)
+
+    return render_template('admin_dashboard.html',
+                           total_products=total_products,
+                           total_users=total_users,
+                           total_orders=total_orders,
+                           total_revenue=total_revenue,
+                           recent_orders=recent_orders)
 
 @app.route('/admin/products')
 @admin_required
 def admin_products():
-    products = Product.query.all()
+    products_cursor = db.products.find()
+    products = convert_products_cursor(products_cursor)
     return render_template('admin_products.html', products=products)
 
 @app.route('/admin/product/add', methods=['GET', 'POST'])
@@ -376,87 +382,125 @@ def add_product():
             flash('Product name is required', 'danger')
             return redirect(url_for('add_product'))
 
-        new_product = Product(
-            name=name,
-            description=description,
-            price=price,
-            stock=stock,
-            unit=unit
-        )
-        db.session.add(new_product)
-        db.session.commit()
+        new_product = {
+            "name": name,
+            "description": description,
+            "price": price,
+            "stock": stock,
+            "unit": unit,
+            "created_at": datetime.utcnow()
+        }
+        db.products.insert_one(new_product)
         flash('Product added successfully', 'success')
         return redirect(url_for('admin_products'))
     return render_template('add_product.html')
 
-@app.route('/admin/product/edit/<int:product_id>', methods=['GET', 'POST'])
+@app.route('/admin/product/edit/<product_id>', methods=['GET', 'POST'])
 @admin_required
 def edit_product(product_id):
-    product = Product.query.get_or_404(product_id)
+    try:
+        product = db.products.find_one({"_id": ObjectId(product_id)})
+    except Exception:
+        flash('Invalid product id', 'danger')
+        return redirect(url_for('admin_products'))
+
+    if not product:
+        flash('Product not found', 'danger')
+        return redirect(url_for('admin_products'))
+
     if request.method == 'POST':
-        product.name = request.form.get('name', '').strip()
-        product.description = request.form.get('description', '').strip()
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
         try:
-            product.price = float(request.form.get('price', product.price))
-            product.stock = int(request.form.get('stock', product.stock))
+            price = float(request.form.get('price', product['price']))
+            stock = int(request.form.get('stock', product['stock']))
         except ValueError:
             flash('Invalid price or stock value', 'danger')
             return redirect(url_for('edit_product', product_id=product_id))
-        product.unit = request.form.get('unit', 'Liter')
-        db.session.commit()
+        unit = request.form.get('unit', 'Liter')
+
+        db.products.update_one({"_id": product['_id']}, {"$set": {
+            "name": name,
+            "description": description,
+            "price": price,
+            "stock": stock,
+            "unit": unit
+        }})
         flash('Product updated successfully', 'success')
         return redirect(url_for('admin_products'))
+
+    # prepare product for template
+    product['_id'] = str(product['_id'])
+    if isinstance(product.get('created_at'), datetime):
+        product['created_at'] = product['created_at'].isoformat()
     return render_template('edit_product.html', product=product)
 
-@app.route('/admin/product/delete/<int:product_id>', methods=['POST'])
+@app.route('/admin/product/delete/<product_id>', methods=['POST'])
 @admin_required
 def delete_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    db.session.delete(product)
-    db.session.commit()
-    flash('Product deleted successfully', 'success')
+    try:
+        db.products.delete_one({"_id": ObjectId(product_id)})
+        flash('Product deleted successfully', 'success')
+    except Exception:
+        flash('Invalid product id', 'danger')
     return redirect(url_for('admin_products'))
 
 @app.route('/admin/orders')
 @admin_required
 def admin_orders():
-    orders = Order.query.order_by(Order.order_date.desc()).all()
+    orders_cursor = db.orders.find().sort("order_date", -1)
+    orders = []
+    for o in orders_cursor:
+        o['_id'] = str(o['_id'])
+        if isinstance(o.get('order_date'), datetime):
+            o['order_date'] = o['order_date'].isoformat()
+        orders.append(o)
     return render_template('admin_orders.html', orders=orders)
 
-@app.route('/admin/order/<int:order_id>/status', methods=['POST'])
+@app.route('/admin/order/<order_id>/status', methods=['POST'])
 @admin_required
 def update_order_status(order_id):
-    order = Order.query.get_or_404(order_id)
     status = request.form.get('status', 'Pending')
-    if status in ['Pending', 'Completed', 'Cancelled']:
-        order.status = status
-        db.session.commit()
-        flash('Order status updated', 'success')
-    else:
+    if status not in ['Pending', 'Completed', 'Cancelled']:
         flash('Invalid status', 'danger')
+        return redirect(url_for('admin_orders'))
+    try:
+        db.orders.update_one({"_id": ObjectId(order_id)}, {"$set": {"status": status}})
+        flash('Order status updated', 'success')
+    except Exception:
+        flash('Invalid order id', 'danger')
     return redirect(url_for('admin_orders'))
 
 @app.route('/admin/users')
 @admin_required
 def admin_users():
-    users = User.query.filter_by(is_admin=False).all()
+    users_cursor = db.users.find({"is_admin": False})
+    users = []
+    for u in users_cursor:
+        u['_id'] = str(u['_id'])
+        if isinstance(u.get('created_at'), datetime):
+            u['created_at'] = u['created_at'].isoformat()
+        users.append(u)
     return render_template('admin_users.html', users=users)
 
 @app.route('/admin/reports')
 @admin_required
 def admin_reports():
-    orders = Order.query.all()
-    products = Product.query.all()
-    
+    orders_cursor = db.orders.find()
+    products_cursor = db.products.find()
+
+    # daily sales
     daily_sales = {}
-    for order in orders:
-        date = order.order_date.date()
-        daily_sales[date] = daily_sales.get(date, 0) + order.total_amount
-    
-    return render_template('admin_reports.html', 
-                         daily_sales=daily_sales,
-                         products=products,
-                         orders=orders)
+    for order in orders_cursor:
+        date = order['order_date'].date() if isinstance(order.get('order_date'), datetime) else None
+        if date:
+            daily_sales[date] = daily_sales.get(date, 0) + float(order.get('total_amount', 0))
+
+    products = convert_products_cursor(products_cursor)
+    return render_template('admin_reports.html',
+                           daily_sales=daily_sales,
+                           products=products,
+                           orders=list(db.orders.find()))
 
 @app.route('/admin/reset-password', methods=['GET', 'POST'])
 @admin_required
@@ -465,32 +509,29 @@ def admin_reset_password():
         old_password = request.form.get('old_password', '')
         new_password = request.form.get('new_password', '')
         confirm_password = request.form.get('confirm_password', '')
-        
-        user = User.query.get(session['user_id'])
-        
-        if not check_password_hash(user.password, old_password):
+
+        user = get_user_by_id(session['user_id'])
+        if not user or not check_password_hash(user['password'], old_password):
             flash('Old password is incorrect', 'danger')
             return redirect(url_for('admin_reset_password'))
-        
+
         if new_password != confirm_password:
             flash('New passwords do not match', 'danger')
             return redirect(url_for('admin_reset_password'))
-        
+
         if len(new_password) < 6:
             flash('Password must be at least 6 characters', 'danger')
             return redirect(url_for('admin_reset_password'))
-        
-        user.password = generate_password_hash(new_password)
-        db.session.commit()
+
+        db.users.update_one({"_id": ObjectId(session['user_id'])}, {"$set": {"password": generate_password_hash(new_password)}})
         flash('Password changed successfully! Please login again.', 'success')
         return redirect(url_for('logout'))
-    
+
     return render_template('admin_reset_password.html')
 
-# ==================== USER PASSWORD RESET ROUTES ====================
+# ----------------- Password reset email -----------------
 
 def send_password_reset_email(user_email, reset_token):
-    """Send password reset email to user"""
     try:
         reset_link = url_for('reset_password', token=reset_token, _external=True)
         msg = Message(
@@ -498,27 +539,19 @@ def send_password_reset_email(user_email, reset_token):
             recipients=[user_email],
             html=f'''
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
-                    <h1 style="margin: 0;">Dairy Management System</h1>
+              <div style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
+                <h1 style="margin: 0;">Dairy Management System</h1>
+              </div>
+              <div style="background: #fefae0; padding: 30px; border-radius: 0 0 8px 8px;">
+                <p style="color: #333; font-size: 16px;">Hello,</p>
+                <p style="color: #666; font-size: 14px; line-height: 1.6;">We received a request to reset your password. Click the button below to create a new password.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="{reset_link}" style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reset Password</a>
                 </div>
-                <div style="background: #fefae0; padding: 30px; border-radius: 0 0 8px 8px;">
-                    <p style="color: #333; font-size: 16px;">Hello,</p>
-                    <p style="color: #666; font-size: 14px; line-height: 1.6;">
-                        We received a request to reset your password. Click the button below to create a new password.
-                    </p>
-                    <div style="text-align: center; margin: 30px 0;">
-                        <a href="{reset_link}" style="background: linear-gradient(135deg, #2d5016 0%, #52b788 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
-                            Reset Password
-                        </a>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">
-                        If you didn't request a password reset, ignore this email. The link above will expire in 1 hour.
-                    </p>
-                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    <p style="color: #999; font-size: 12px; text-align: center;">
-                        © 2025 Dairy Management System. All rights reserved.
-                    </p>
-                </div>
+                <p style="color: #666; font-size: 12px;">If you didn't request a password reset, ignore this email. The link above will expire in 1 hour.</p>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                <p style="color: #999; font-size: 12px; text-align: center;">© 2025 Dairy Management System. All rights reserved.</p>
+              </div>
             </div>
             '''
         )
@@ -532,60 +565,48 @@ def send_password_reset_email(user_email, reset_token):
 def forgot_password():
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
-        user = User.query.filter_by(email=email).first()
-        
+        user = db.users.find_one({"email": email})
+
         if user:
-            import secrets
             reset_token = secrets.token_urlsafe(32)
-            user.reset_token = reset_token
-            user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
-            db.session.commit()
-            
-            # Try to send email
-            if send_password_reset_email(user.email, reset_token):
+            db.users.update_one({"_id": user['_id']}, {"$set": {"reset_token": reset_token, "reset_token_expiry": datetime.utcnow() + timedelta(hours=1)}})
+
+            if send_password_reset_email(email, reset_token):
                 flash('Password reset link has been sent to your email!', 'success')
             else:
-                # Fallback: show link if email fails (for development)
                 reset_link = url_for('reset_password', token=reset_token, _external=True)
                 flash('Email could not be sent. Here is your reset link (1 hour expiry):', 'warning')
                 flash(f'Reset Link: {reset_link}', 'info')
-            
             return redirect(url_for('login'))
         else:
             flash('Email not found in our system', 'danger')
-    
+
     return render_template('forgot_password.html')
 
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
-    user = User.query.filter_by(reset_token=token).first()
-    
-    if not user or user.reset_token_expiry < datetime.utcnow():
+    user = db.users.find_one({"reset_token": token})
+    if not user or user.get('reset_token_expiry') is None or user['reset_token_expiry'] < datetime.utcnow():
         flash('Invalid or expired reset link', 'danger')
         return redirect(url_for('login'))
-    
+
     if request.method == 'POST':
         new_password = request.form.get('new_password', '')
         confirm_password = request.form.get('confirm_password', '')
-        
         if new_password != confirm_password:
             flash('Passwords do not match', 'danger')
             return redirect(url_for('reset_password', token=token))
-        
         if len(new_password) < 6:
             flash('Password must be at least 6 characters', 'danger')
             return redirect(url_for('reset_password', token=token))
-        
-        user.password = generate_password_hash(new_password)
-        user.reset_token = None
-        user.reset_token_expiry = None
-        db.session.commit()
+
+        db.users.update_one({"_id": user['_id']}, {"$set": {"password": generate_password_hash(new_password), "reset_token": None, "reset_token_expiry": None}})
         flash('Password reset successfully! Please login with your new password.', 'success')
         return redirect(url_for('login'))
-    
+
     return render_template('reset_password.html')
 
-# ==================== ERROR HANDLERS ====================
+# ----------------- Error handlers -----------------
 
 @app.errorhandler(404)
 def not_found(error):
@@ -595,11 +616,9 @@ def not_found(error):
 def server_error(error):
     return render_template('500.html'), 500
 
-# ==================== RUN APPLICATION ====================
+# ----------------- Run app -----------------
 
 if __name__ == '__main__':
     debug = os.environ.get('ENV') != 'production'
     port = int(os.environ.get('PORT', 5000))
-    # Only run if not using Gunicorn (development only)
-    if 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', ''):
-        app.run(debug=debug, host='0.0.0.0', port=port)
+    app.run(debug=debug, host='0.0.0.0', port=port)

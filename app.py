@@ -1,65 +1,120 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from flask_sqlalchemy import SQLAlchemy
+from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dairy_management.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
+# ✅ Use environment variable for safety; fallback to local MongoDB
+app.config['MONGO_URI'] = os.environ.get(
+    'MONGO_URI',
+    'mongodb://localhost:27017/dairy_management_db'
+)
 
-# Database Models
-class User(db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    phone = db.Column(db.String(10), nullable=False)
-    address = db.Column(db.String(255), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    orders = db.relationship('Order', backref='user', lazy=True, cascade='all, delete-orphan')
+# Initialize MongoDB
+mongo = PyMongo(app)
+db = mongo.db
 
-class Product(db.Model):
-    __tablename__ = 'products'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    description = db.Column(db.String(255))
-    price = db.Column(db.Float, nullable=False)
-    stock = db.Column(db.Integer, default=0)
-    unit = db.Column(db.String(50), default='Liter')  # Liter, kg, piece, etc.
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    order_items = db.relationship('OrderItem', backref='product', lazy=True, cascade='all, delete-orphan')
+# ✅ Collections (similar to tables)
+users_col = db.users
+products_col = db.products
+orders_col = db.orders
+order_items_col = db.order_items
 
-class Order(db.Model):
-    __tablename__ = 'orders'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    total_amount = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default='Pending')  # Pending, Completed, Cancelled
-    order_date = db.Column(db.DateTime, default=datetime.utcnow)
-    delivery_date = db.Column(db.DateTime)
-    order_items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
+# ✅ Helper function: create default admin user if not exists
+def create_admin_user():
+    admin = users_col.find_one({'username': 'admin'})
+    if not admin:
+        users_col.insert_one({
+            'username': 'admin',
+            'email': 'admin@dairy.com',
+            'password': generate_password_hash('admin123'),
+            'phone': '9999999999',
+            'address': 'Dairy Management HQ',
+            'is_admin': True,
+            'created_at': datetime.utcnow()
+        })
+        print("✅ Default admin user created: admin / admin123")
+    else:
+        print("⚙️ Admin user already exists.")
 
-class OrderItem(db.Model):
-    __tablename__ = 'order_items'
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    quantity = db.Column(db.Float, nullable=False)
-    price = db.Column(db.Float, nullable=False)
-    subtotal = db.Column(db.Float, nullable=False)
+# ✅ Sample route: Home
+@app.route('/')
+def home():
+    products = list(products_col.find())
+    return render_template('index.html', products=products)
 
-# Create database tables
+# ✅ Register route
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = generate_password_hash(request.form['password'])
+        phone = request.form['phone']
+        address = request.form['address']
+
+        # Check duplicate email or username
+        if users_col.find_one({'$or': [{'username': username}, {'email': email}]}):
+            flash('Username or Email already exists!')
+            return redirect(url_for('register'))
+
+        users_col.insert_one({
+            'username': username,
+            'email': email,
+            'password': password,
+            'phone': phone,
+            'address': address,
+            'is_admin': False,
+            'created_at': datetime.utcnow()
+        })
+        flash('Registration successful! Please log in.')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+# ✅ Login route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = users_col.find_one({'username': username})
+        if user and check_password_hash(user['password'], password):
+            session['user_id'] = str(user['_id'])
+            session['username'] = user['username']
+            session['is_admin'] = user.get('is_admin', False)
+            flash('Login successful!')
+            return redirect(url_for('admin_dashboard') if user.get('is_admin') else url_for('home'))
+        else:
+            flash('Invalid username or password!')
+    return render_template('login.html')
+
+# ✅ Logout
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.')
+    return redirect(url_for('login'))
+
+# ✅ Admin dashboard
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if not session.get('is_admin'):
+        flash('Access denied!')
+        return redirect(url_for('login'))
+    users = list(users_col.find())
+    products = list(products_col.find())
+    return render_template('admin_dashboard.html', users=users, products=products)
+
+# ✅ Initialize admin when starting app
 with app.app_context():
-    db.create_all()
+    create_admin_user()
 
+# ✅ Run app (Render-compatible)
 if __name__ == '__main__':
-    
-    port = int(os.environ.get("PORT", 10000))  # Render provides PORT=10000
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-    
