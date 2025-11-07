@@ -5,7 +5,6 @@ A full-featured dairy management web application built with Flask and SQLite
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -81,17 +80,40 @@ class OrderItem(db.Model):
 
 # Create database tables
 with app.app_context():
-    try:
-        inspector = inspect(db.engine)
-        existing_tables = inspector.get_table_names()
-        if not existing_tables:
-            print("No tables found — creating database schema...")
-            db.create_all()
-            print("Tables created successfully ✅")
-        else:
-            print("Database tables already exist — skipping create_all() ✅")
-    except Exception as e:
-        print(f"⚠️ Database initialization skipped due to: {e}")
+    db.create_all()
+    
+    # Check if admin user exists, if not create default data
+    if User.query.filter_by(username='admin').first() is None:
+        print("Initializing default admin user and sample products...")
+        
+        # Create admin user
+        admin_user = User(
+            username='admin',
+            email='admin@dairymanagement.com',
+            password=generate_password_hash('admin123'),
+            phone='9999999999',
+            address='Dairy Management HQ',
+            is_admin=True
+        )
+        db.session.add(admin_user)
+        db.session.flush()
+        
+        # Create sample products
+        sample_products = [
+            Product(name='Milk (1L)', description='Fresh whole milk', price=50, stock=100, unit='Liter'),
+            Product(name='Yogurt (500ml)', description='Creamy yogurt', price=80, stock=75, unit='ml'),
+            Product(name='Buttermilk (1L)', description='Fresh buttermilk', price=40, stock=50, unit='Liter'),
+            Product(name='Paneer (500g)', description='Fresh cottage cheese', price=250, stock=30, unit='grams'),
+            Product(name='Ghee (500ml)', description='Pure clarified butter', price=500, stock=20, unit='ml'),
+            Product(name='Cheese (200g)', description='Processed cheese', price=150, stock=40, unit='grams'),
+        ]
+        for product in sample_products:
+            db.session.add(product)
+        
+        db.session.commit()
+        print("Default admin user and sample products created successfully!")
+    else:
+        print("Database already initialized with data")
 
 # ==================== DECORATORS ====================
 
@@ -426,25 +448,6 @@ def admin_reset_password():
         return redirect(url_for('logout'))
     
     return render_template('admin_reset_password.html')
-@app.route('/create_admin_secret')
-def create_admin_secret():
-    from app_complete import db, User  # ensure proper import
-    admin = User.query.filter_by(username='admin').first()
-    if not admin:
-        admin = User(
-            username='admin',
-            email='admin@dairy.com',
-            password=generate_password_hash('admin123'),
-            phone='0000000000',
-            address='Render Admin',
-            is_admin=True
-        )
-        db.session.add(admin)
-        db.session.commit()
-        return "✅ Admin user created successfully!"
-    else:
-        return "⚠️ Admin already exists!"
-
 
 # ==================== ERROR HANDLERS ====================
 
@@ -459,9 +462,8 @@ def server_error(error):
 # ==================== RUN APPLICATION ====================
 
 if __name__ == '__main__':
-    from waitress import serve
-    import os
-
-    port = int(os.environ.get("PORT", 10000))  # ✅ use Render's PORT variable
-    print(f"🚀 Starting server on port {port}...")
-    serve(app, host="0.0.0.0", port=port)
+    debug = os.environ.get('ENV') != 'production'
+    port = int(os.environ.get('PORT', 5000))
+    # Only run if not using Gunicorn (development only)
+    if 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', ''):
+        app.run(debug=debug, host='0.0.0.0', port=port)
