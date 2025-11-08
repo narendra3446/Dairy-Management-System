@@ -11,12 +11,15 @@ from flask_pymongo import PyMongo
 from bson.objectid import ObjectId
 import os
 import secrets
+from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
 
 # Initialize Flask app
 app = Flask(__name__)
+print("MONGO_URI =", app.config["MONGO_URI"])
+
 app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
 # MongoDB connection (set MONGO_URI in environment for production)
@@ -477,13 +480,21 @@ def update_order_status(order_id):
 @app.route('/admin/users')
 @admin_required
 def admin_users():
-    users_cursor = db.users.find({"is_admin": False})
-    users = []
-    for u in users_cursor:
-        u['_id'] = str(u['_id'])
-        if isinstance(u.get('created_at'), datetime):
-            u['created_at'] = u['created_at'].isoformat()
-        users.append(u)
+    users = list(db.users.find())
+
+    # Convert string timestamps to datetime objects (safe conversion)
+    for user in users:
+        created_at = user.get("created_at")
+        if isinstance(created_at, str):
+            try:
+                user["created_at"] = datetime.fromisoformat(created_at)
+            except ValueError:
+                # fallback for other date formats (like Mongo ISODate)
+                try:
+                    user["created_at"] = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass  # leave it as string if conversion fails
+
     return render_template('admin_users.html', users=users)
 
 @app.route('/admin/reports')
