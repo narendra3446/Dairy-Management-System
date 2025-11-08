@@ -11,10 +11,13 @@ from flask_pymongo import PyMongo
 from bson.objectid import ObjectId
 import os
 import secrets
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # Initialize Flask app
 app = Flask(__name__)
-
+app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
 # MongoDB connection (set MONGO_URI in environment for production)
 app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/dairy_db')
