@@ -18,7 +18,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-print("MONGO_URI =", app.config["MONGO_URI"])
+
 
 app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
