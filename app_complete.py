@@ -480,6 +480,10 @@ def add_product():
         db.products.insert_one(new_product)
         flash('Product added successfully', 'success')
         return redirect(url_for('admin_products'))
+    products = list(db.products.find())
+    for p in products:
+        p["_id"] = str(p["_id"])
+
     return render_template('add_product.html')
 
 
