@@ -6,7 +6,7 @@
 <div style="max-width: 600px; margin: 2rem auto;">
     <div class="card">
         <h2 style="text-align: center; color: #667eea;">Order Receipt</h2>
-
+        
         <div style="border-bottom: 2px solid #667eea; padding-bottom: 1rem; margin-bottom: 1rem;">
             <p><strong>Order ID:</strong> #{{ order._id }}</p>
             <p><strong>Customer:</strong> {{ session['username'] }}</p>
@@ -19,7 +19,7 @@
             <p><strong>Order Date:</strong> {{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</p>
             <p><strong>Delivery Date:</strong> {{ order.delivery_date.strftime('%d-%m-%Y') if order.delivery_date else 'TBD' }}</p>
 
-            <p><strong>Status:</strong> 
+            <p><strong>Status:</strong>
                 <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem;
                     {% if order.status == 'Completed' %}background-color: #d4edda; color: #155724;
                     {% elif order.status == 'Pending' %}background-color: #fff3cd; color: #856404;

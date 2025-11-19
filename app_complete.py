@@ -333,47 +333,49 @@ def user_orders():
 
 @app.route('/user/receipt/<order_id>')
 @login_required
+@app.route("/receipt/<order_id>")
 def user_receipt(order_id):
     try:
         order = db.orders.find_one({"_id": ObjectId(order_id)})
     except Exception:
         flash('Invalid order', 'danger')
-        return redirect(url_for('user_dashboard'))
+        return redirect(url_for('user_orders'))
 
     if not order:
         flash('Order not found', 'danger')
-        return redirect(url_for('user_dashboard'))
+        return redirect(url_for('user_orders'))
 
-    if str(order['user_id']) != session['user_id']:
-        flash('Unauthorized', 'danger')
-        return redirect(url_for('user_dashboard'))
+    # Ensure User owns the order
+    if str(order['user_id']) != session.get('user_id'):
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('user_orders'))
 
-    # Debug print (remove in production if desired)
-    print("ORDER ITEMS (from DB):", order.get("order_items"))
-
-    # Convert ObjectId to string for Jinja
+    # Convert for template
     order['_id'] = str(order['_id'])
 
-    # ensure order_items exists and convert product_id to str for template convenience
-    if order.get('order_items') is None:
-        order['order_items'] = []
+    # Ensure order_items exists
+    order['order_items'] = order.get('order_items', [])
+
+    # Parse product_id for template
     for it in order['order_items']:
         if isinstance(it.get('product_id'), ObjectId):
             it['product_id'] = str(it['product_id'])
 
-    # If datetimes are strings (older data), parse them; otherwise keep datetimes so template can use strftime
+    # Convert timestamps
     if isinstance(order.get('order_date'), str):
         try:
             order['order_date'] = datetime.fromisoformat(order['order_date'])
         except:
-            pass
-    if isinstance(order.get('delivery_date'), str) and order['delivery_date']:
+            order['order_date'] = datetime.now()
+
+    if isinstance(order.get('delivery_date'), str):
         try:
             order['delivery_date'] = datetime.fromisoformat(order['delivery_date'])
         except:
             pass
 
-    return render_template('receipt.html', order=order)
+    return render_template("receipt.html", order=order)
+
 
 
 # ----------------- Admin routes -----------------
@@ -541,46 +543,31 @@ def admin_orders():
     orders = []
 
     for o in orders_cursor:
-        # convert order id
-        o["_id"] = str(o["_id"])
+        o['_id'] = str(o['_id'])
+        o['user_id'] = str(o['user_id'])
 
-        # convert order_date back to datetime (if stored as string)
-        if isinstance(o.get("order_date"), str):
+        # Convert dates
+        if isinstance(o.get('order_date'), datetime):
+            pass
+        elif isinstance(o.get('order_date'), str):
             try:
-                o["order_date"] = datetime.fromisoformat(o["order_date"])
+                o['order_date'] = datetime.fromisoformat(o['order_date'])
             except:
-                pass
+                o['order_date'] = datetime.now()
 
-        # =============== USER DATA FIX =============== #
-        user_id = o.get("user_id")
-        if user_id:
-            try:
-                user = db.users.find_one({"_id": ObjectId(user_id)})
-                if user:
-                    user["_id"] = str(user["_id"])
-                    o["user_data"] = user
-                else:
-                    o["user_data"] = None
-            except:
-                o["user_data"] = None
-        else:
-            o["user_data"] = None
+        # 🟩 FIX: ensure order_items exists
+        o['order_items'] = o.get('order_items', [])
 
-        # =============== PRODUCT DETAILS FIX =============== #
-        product_ids = o.get("items", [])
-
-        try:
-            obj_ids = [ObjectId(pid) for pid in product_ids if pid]
-            products = list(db.products.find({"_id": {"$in": obj_ids}}))
-            for p in products:
-                p["_id"] = str(p["_id"])
-            o["product_details"] = products
-        except:
-            o["product_details"] = []
+        # Fetch user info
+        user = db.users.find_one({"_id": ObjectId(o['user_id'])})
+        if user:
+            user['_id'] = str(user['_id'])
+        o['user_data'] = user
 
         orders.append(o)
 
     return render_template('admin_orders.html', orders=orders)
+
 
 
 @app.route('/admin/order/<order_id>/status', methods=['POST'])
