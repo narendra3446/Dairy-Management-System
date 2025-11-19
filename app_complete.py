@@ -333,7 +333,6 @@ def user_orders():
 
 @app.route('/user/receipt/<order_id>')
 @login_required
-@app.route("/receipt/<order_id>")
 def user_receipt(order_id):
     try:
         order = db.orders.find_one({"_id": ObjectId(order_id)})
