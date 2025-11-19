@@ -1,17 +1,16 @@
 """
-Dairy Management System - MongoDB version
+Dairy Management System - MongoDB version (MongoDB-safe)
 """
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask_pymongo import PyMongo
 from bson.objectid import ObjectId
 import os
 import secrets
-from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,11 +18,8 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
-
-app.config["MONGO_URI"] = os.getenv("MONGO_URI")
+app.config['MONGO_URI'] = os.getenv('MONGO_URI', 'mongodb://localhost:27017/dairy_db')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
-# MongoDB connection (set MONGO_URI in environment for production)
-app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/dairy_db')
 
 app.config['JSON_SORT_KEYS'] = False
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('ENV') == 'production'
@@ -42,6 +38,7 @@ mail = Mail(app)
 mongo_client = PyMongo(app)
 db = mongo_client.db  # shorthand
 
+
 # ----------------- Helpers -----------------
 
 def objid_to_str(doc):
@@ -50,6 +47,7 @@ def objid_to_str(doc):
         return None
     doc['_id'] = str(doc['_id'])
     return doc
+
 
 def convert_products_cursor(cursor):
     out = []
@@ -61,14 +59,17 @@ def convert_products_cursor(cursor):
         out.append(p)
     return out
 
+
 def get_user_by_id(user_id_str):
     try:
         return db.users.find_one({"_id": ObjectId(user_id_str)})
     except Exception:
         return None
 
+
 def get_user_by_email(email):
     return db.users.find_one({"email": email})
+
 
 # ----------------- Initialization (one-time) -----------------
 
@@ -79,10 +80,9 @@ def initialize_db():
     Safe to run repeatedly — it checks existence and won't duplicate.
     """
     try:
-        # check init flag
         init_flag = db.init_flags.find_one({})
         if not init_flag:
-            db.init_flags.insert_one({"initialized": False, "created_at": datetime.utcnow()})
+            db.init_flags.insert_one({"initialized": False, "created_at": datetime.now(timezone.utc)})
             init_flag = db.init_flags.find_one({})
 
         if not init_flag.get("initialized", False):
@@ -97,30 +97,27 @@ def initialize_db():
                     "phone": "9999999999",
                     "address": "Dairy Management HQ",
                     "is_admin": True,
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
                     "reset_token": None,
                     "reset_token_expiry": None
                 }
                 db.users.insert_one(admin_user)
 
                 sample_products = [
-                    {"name": "Milk (1L)", "description": "Fresh whole milk", "price": 50.0, "stock": 100, "unit": "Liter", "created_at": datetime.utcnow()},
-                    {"name": "Yogurt (500ml)", "description": "Creamy yogurt", "price": 80.0, "stock": 75, "unit": "ml", "created_at": datetime.utcnow()},
-                    {"name": "Buttermilk (1L)", "description": "Fresh buttermilk", "price": 40.0, "stock": 50, "unit": "Liter", "created_at": datetime.utcnow()},
-                    {"name": "Paneer (500g)", "description": "Fresh cottage cheese", "price": 250.0, "stock": 30, "unit": "grams", "created_at": datetime.utcnow()},
-                    {"name": "Ghee (500ml)", "description": "Pure clarified butter", "price": 500.0, "stock": 20, "unit": "ml", "created_at": datetime.utcnow()},
-                    {"name": "Cheese (200g)", "description": "Processed cheese", "price": 150.0, "stock": 40, "unit": "grams", "created_at": datetime.utcnow()},
+                    {"name": "Milk (1L)", "description": "Fresh whole milk", "price": 50.0, "stock": 100, "unit": "Liter", "created_at": datetime.now(timezone.utc)},
+                    {"name": "Yogurt (500ml)", "description": "Creamy yogurt", "price": 80.0, "stock": 75, "unit": "ml", "created_at": datetime.now(timezone.utc)},
+                    {"name": "Buttermilk (1L)", "description": "Fresh buttermilk", "price": 40.0, "stock": 50, "unit": "Liter", "created_at": datetime.now(timezone.utc)},
+                    {"name": "Paneer (500g)", "description": "Fresh cottage cheese", "price": 250.0, "stock": 30, "unit": "grams", "created_at": datetime.now(timezone.utc)},
+                    {"name": "Ghee (500ml)", "description": "Pure clarified butter", "price": 500.0, "stock": 20, "unit": "ml", "created_at": datetime.now(timezone.utc)},
+                    {"name": "Cheese (200g)", "description": "Processed cheese", "price": 150.0, "stock": 40, "unit": "grams", "created_at": datetime.now(timezone.utc)},
                 ]
                 db.products.insert_many(sample_products)
 
-            # mark initialized
-            db.init_flags.update_one({"_id": init_flag["_id"]}, {"$set": {"initialized": True, "updated_at": datetime.utcnow()}})
+            db.init_flags.update_one({"_id": init_flag["_id"]}, {"$set": {"initialized": True, "updated_at": datetime.now(timezone.utc)}})
             print("Default admin user and sample products created successfully!")
-        else:
-            # already initialized
-            pass
     except Exception as e:
         print(f"Initialization error: {str(e)}")
+
 
 # ----------------- Decorators -----------------
 
@@ -132,6 +129,7 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
 
 def admin_required(f):
     @wraps(f)
@@ -146,6 +144,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
 # ----------------- Auth routes -----------------
 
 @app.route('/')
@@ -157,6 +156,7 @@ def index():
         else:
             return redirect(url_for('user_dashboard'))
     return redirect(url_for('login'))
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -186,14 +186,15 @@ def register():
             "phone": phone,
             "address": address,
             "is_admin": False,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
             "reset_token": None,
             "reset_token_expiry": None
         }
-        result = db.users.insert_one(new_user)
+        db.users.insert_one(new_user)
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -215,11 +216,13 @@ def login():
             flash('Invalid username or password', 'danger')
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
     flash('Logged out successfully', 'success')
     return redirect(url_for('login'))
+
 
 # ----------------- User routes -----------------
 
@@ -233,6 +236,7 @@ def user_dashboard():
     products_cursor = db.products.find({"stock": {"$gt": 0}})
     products = convert_products_cursor(products_cursor)
     return render_template('user_dashboard.html', products=products, user=user)
+
 
 @app.route('/user/place-order', methods=['POST'])
 @login_required
@@ -254,35 +258,43 @@ def place_order():
             return jsonify({'success': False, 'message': 'Invalid product id'}), 400
         if not prod:
             return jsonify({'success': False, 'message': 'Product not found'}), 400
-        if prod.get('stock', 0) < item['quantity']:
+        if prod.get('stock', 0) < int(item['quantity']):
             return jsonify({'success': False, 'message': f"Insufficient stock for {prod['name']}"}), 400
 
         subtotal = float(prod['price']) * float(item['quantity'])
         total_amount += subtotal
         order_items.append({
-            "product_id": prod['_id'],
+            "product_id": prod['_id'],            # stored as ObjectId
             "product_name": prod['name'],
-            "quantity": item['quantity'],
+            "product_unit": prod.get('unit', ''),
+            "quantity": int(item['quantity']),
             "price": float(prod['price']),
             "subtotal": subtotal
         })
 
-    # Create order
+    # Create order (store under 'order_items' — consistent across templates)
     order_doc = {
         "user_id": ObjectId(session['user_id']),
         "total_amount": total_amount,
         "status": "Pending",
-        "order_date": datetime.utcnow(),
-        "delivery_date": datetime.utcnow() + timedelta(days=1),
-        "items": order_items
+        "order_date": datetime.now(timezone.utc),
+        "delivery_date": datetime.now(timezone.utc) + timedelta(days=1),
+        "order_items": order_items
     }
     order_result = db.orders.insert_one(order_doc)
 
-    # Update product stock
+    db.users.update_one(
+    {"_id": ObjectId(session['user_id'])},
+    {"$inc": {"total_orders": 1}}
+)
+
+
+    # Update product stock (decrement)
     for it in order_items:
         db.products.update_one({"_id": it['product_id']}, {"$inc": {"stock": -int(it['quantity'])}})
 
     return jsonify({'success': True, 'message': 'Order placed successfully', 'order_id': str(order_result.inserted_id)})
+
 
 @app.route('/user/orders')
 @login_required
@@ -292,17 +304,27 @@ def user_orders():
     orders = []
     for o in orders_cursor:
         o['_id'] = str(o['_id'])
-        # convert any ObjectIds in items if present
-        for it in o.get('items', []):
+        # Ensure order_items exists and convert inner ObjectIds to strings for template convenience
+        if o.get('order_items') is None:
+            o['order_items'] = []
+        for it in o['order_items']:
             if isinstance(it.get('product_id'), ObjectId):
                 it['product_id'] = str(it['product_id'])
-        # serializable dates
-        if isinstance(o.get('order_date'), datetime):
-            o['order_date'] = o['order_date'].isoformat()
-        if isinstance(o.get('delivery_date'), datetime):
-            o['delivery_date'] = o['delivery_date'].isoformat()
+        # Leave datetimes as datetimes so Jinja's strftime works.
+        # If they are strings (older orders), try to parse ISO format
+        if isinstance(o.get('order_date'), str):
+            try:
+                o['order_date'] = datetime.fromisoformat(o['order_date'])
+            except:
+                pass
+        if isinstance(o.get('delivery_date'), str) and o['delivery_date']:
+            try:
+                o['delivery_date'] = datetime.fromisoformat(o['delivery_date'])
+            except:
+                pass
         orders.append(o)
     return render_template('user_orders.html', orders=orders, user=user)
+
 
 @app.route('/user/receipt/<order_id>')
 @login_required
@@ -321,16 +343,33 @@ def user_receipt(order_id):
         flash('Unauthorized', 'danger')
         return redirect(url_for('user_dashboard'))
 
-    # convert for template
+    # Debug print (remove in production if desired)
+    print("ORDER ITEMS (from DB):", order.get("order_items"))
+
+    # Convert ObjectId to string for Jinja
     order['_id'] = str(order['_id'])
-    if isinstance(order.get('order_date'), datetime):
-        order['order_date'] = order['order_date'].isoformat()
-    if isinstance(order.get('delivery_date'), datetime):
-        order['delivery_date'] = order['delivery_date'].isoformat()
-    for it in order.get('items', []):
+
+    # ensure order_items exists and convert product_id to str for template convenience
+    if order.get('order_items') is None:
+        order['order_items'] = []
+    for it in order['order_items']:
         if isinstance(it.get('product_id'), ObjectId):
             it['product_id'] = str(it['product_id'])
+
+    # If datetimes are strings (older data), parse them; otherwise keep datetimes so template can use strftime
+    if isinstance(order.get('order_date'), str):
+        try:
+            order['order_date'] = datetime.fromisoformat(order['order_date'])
+        except:
+            pass
+    if isinstance(order.get('delivery_date'), str) and order['delivery_date']:
+        try:
+            order['delivery_date'] = datetime.fromisoformat(order['delivery_date'])
+        except:
+            pass
+
     return render_template('receipt.html', order=order)
+
 
 # ----------------- Admin routes -----------------
 
@@ -345,12 +384,46 @@ def admin_dashboard():
     total_revenue = 0.0
     for r in agg:
         total_revenue = r.get('total', 0.0)
+
     recent_orders_cursor = db.orders.find().sort("order_date", -1).limit(10)
     recent_orders = []
     for o in recent_orders_cursor:
         o['_id'] = str(o['_id'])
-        if isinstance(o.get('order_date'), datetime):
-            o['order_date'] = o['order_date'].isoformat()
+
+        # Attach user dict (if available)
+        user = None
+        try:
+            # order['user_id'] is an ObjectId in DB; handle string/objid safely
+            user_obj = o.get('user_id')
+            if isinstance(user_obj, ObjectId):
+                user = db.users.find_one({"_id": user_obj})
+            else:
+                # attempt to convert string id to ObjectId
+                try:
+                    user = db.users.find_one({"_id": ObjectId(str(user_obj))})
+                except:
+                    user = None
+        except Exception:
+            user = None
+
+        if user:
+            user['_id'] = str(user['_id'])
+            # keep only safe fields
+            o['user'] = {
+                "username": user.get('username', 'Unknown'),
+                "email": user.get('email', ''),
+                "phone": user.get('phone', '')
+            }
+        else:
+            o['user'] = None
+
+        # Try to keep order_date as datetime for template strftime
+        if isinstance(o.get('order_date'), str):
+            try:
+                o['order_date'] = datetime.fromisoformat(o['order_date'])
+            except:
+                pass
+
         recent_orders.append(o)
 
     return render_template('admin_dashboard.html',
@@ -360,12 +433,14 @@ def admin_dashboard():
                            total_revenue=total_revenue,
                            recent_orders=recent_orders)
 
+
 @app.route('/admin/products')
 @admin_required
 def admin_products():
     products_cursor = db.products.find()
     products = convert_products_cursor(products_cursor)
     return render_template('admin_products.html', products=products)
+
 
 @app.route('/admin/product/add', methods=['GET', 'POST'])
 @admin_required
@@ -394,12 +469,13 @@ def add_product():
             "price": price,
             "stock": stock,
             "unit": unit,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
         db.products.insert_one(new_product)
         flash('Product added successfully', 'success')
         return redirect(url_for('admin_products'))
     return render_template('add_product.html')
+
 
 @app.route('/admin/product/edit/<product_id>', methods=['GET', 'POST'])
 @admin_required
@@ -441,6 +517,7 @@ def edit_product(product_id):
         product['created_at'] = product['created_at'].isoformat()
     return render_template('edit_product.html', product=product)
 
+
 @app.route('/admin/product/delete/<product_id>', methods=['POST'])
 @admin_required
 def delete_product(product_id):
@@ -451,17 +528,55 @@ def delete_product(product_id):
         flash('Invalid product id', 'danger')
     return redirect(url_for('admin_products'))
 
+
 @app.route('/admin/orders')
 @admin_required
 def admin_orders():
     orders_cursor = db.orders.find().sort("order_date", -1)
     orders = []
+
     for o in orders_cursor:
-        o['_id'] = str(o['_id'])
-        if isinstance(o.get('order_date'), datetime):
-            o['order_date'] = o['order_date'].isoformat()
+        # convert order id
+        o["_id"] = str(o["_id"])
+
+        # convert order_date back to datetime (if stored as string)
+        if isinstance(o.get("order_date"), str):
+            try:
+                o["order_date"] = datetime.fromisoformat(o["order_date"])
+            except:
+                pass
+
+        # =============== USER DATA FIX =============== #
+        user_id = o.get("user_id")
+        if user_id:
+            try:
+                user = db.users.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    user["_id"] = str(user["_id"])
+                    o["user_data"] = user
+                else:
+                    o["user_data"] = None
+            except:
+                o["user_data"] = None
+        else:
+            o["user_data"] = None
+
+        # =============== PRODUCT DETAILS FIX =============== #
+        product_ids = o.get("items", [])
+
+        try:
+            obj_ids = [ObjectId(pid) for pid in product_ids if pid]
+            products = list(db.products.find({"_id": {"$in": obj_ids}}))
+            for p in products:
+                p["_id"] = str(p["_id"])
+            o["product_details"] = products
+        except:
+            o["product_details"] = []
+
         orders.append(o)
+
     return render_template('admin_orders.html', orders=orders)
+
 
 @app.route('/admin/order/<order_id>/status', methods=['POST'])
 @admin_required
@@ -477,11 +592,11 @@ def update_order_status(order_id):
         flash('Invalid order id', 'danger')
     return redirect(url_for('admin_orders'))
 
+
 @app.route('/admin/users')
 @admin_required
 def admin_users():
     users = list(db.users.find())
-
     # Convert string timestamps to datetime objects (safe conversion)
     for user in users:
         created_at = user.get("created_at")
@@ -489,13 +604,12 @@ def admin_users():
             try:
                 user["created_at"] = datetime.fromisoformat(created_at)
             except ValueError:
-                # fallback for other date formats (like Mongo ISODate)
                 try:
                     user["created_at"] = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                 except Exception:
-                    pass  # leave it as string if conversion fails
-
+                    pass
     return render_template('admin_users.html', users=users)
+
 
 @app.route('/admin/reports')
 @admin_required
@@ -515,6 +629,7 @@ def admin_reports():
                            daily_sales=daily_sales,
                            products=products,
                            orders=list(db.orders.find()))
+
 
 @app.route('/admin/reset-password', methods=['GET', 'POST'])
 @admin_required
@@ -542,6 +657,7 @@ def admin_reset_password():
         return redirect(url_for('logout'))
 
     return render_template('admin_reset_password.html')
+
 
 # ----------------- Password reset email -----------------
 
@@ -575,6 +691,7 @@ def send_password_reset_email(user_email, reset_token):
         print(f"Error sending email: {str(e)}")
         return False
 
+
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
@@ -583,7 +700,7 @@ def forgot_password():
 
         if user:
             reset_token = secrets.token_urlsafe(32)
-            db.users.update_one({"_id": user['_id']}, {"$set": {"reset_token": reset_token, "reset_token_expiry": datetime.utcnow() + timedelta(hours=1)}})
+            db.users.update_one({"_id": user['_id']}, {"$set": {"reset_token": reset_token, "reset_token_expiry": datetime.now(timezone.utc) + timedelta(hours=1)}})
 
             if send_password_reset_email(email, reset_token):
                 flash('Password reset link has been sent to your email!', 'success')
@@ -597,10 +714,11 @@ def forgot_password():
 
     return render_template('forgot_password.html')
 
+
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     user = db.users.find_one({"reset_token": token})
-    if not user or user.get('reset_token_expiry') is None or user['reset_token_expiry'] < datetime.utcnow():
+    if not user or user.get('reset_token_expiry') is None or user['reset_token_expiry'] < datetime.now(timezone.utc):
         flash('Invalid or expired reset link', 'danger')
         return redirect(url_for('login'))
 
@@ -620,15 +738,18 @@ def reset_password(token):
 
     return render_template('reset_password.html')
 
+
 # ----------------- Error handlers -----------------
 
 @app.errorhandler(404)
 def not_found(error):
     return render_template('404.html'), 404
 
+
 @app.errorhandler(500)
 def server_error(error):
     return render_template('500.html'), 500
+
 
 # ----------------- Run app -----------------
 

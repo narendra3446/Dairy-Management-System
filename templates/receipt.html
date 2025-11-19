@@ -9,17 +9,18 @@
         
         <div style="border-bottom: 2px solid #667eea; padding-bottom: 1rem; margin-bottom: 1rem;">
             <p><strong>Order ID:</strong> #{{ order.id }}</p>
-            <p><strong>Customer:</strong> {{ order.user.username }}</p>
-            <p><strong>Email:</strong> {{ order.user.email }}</p>
-            <p><strong>Phone:</strong> {{ order.user.phone }}</p>
-            <p><strong>Address:</strong> {{ order.user.address }}</p>
+            <p><strong>Customer:</strong> {{ session['username'] }}</p>
+            <p><strong>Email:</strong> {{ session['email'] }}</p>
+            <p><strong>Phone:</strong> {{ session.get('phone', 'N/A') }}</p>
+            <p><strong>Address:</strong> {{ session.get('address', 'N/A') }}</p>
         </div>
         
         <div style="border-bottom: 2px solid #667eea; padding-bottom: 1rem; margin-bottom: 1rem;">
             <p><strong>Order Date:</strong> {{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</p>
             <p><strong>Delivery Date:</strong> {{ order.delivery_date.strftime('%d-%m-%Y') if order.delivery_date else 'TBD' }}</p>
+            
             <p><strong>Status:</strong> 
-                <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem; 
+                <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem;
                     {% if order.status == 'Completed' %}background-color: #d4edda; color: #155724;
                     {% elif order.status == 'Pending' %}background-color: #fff3cd; color: #856404;
                     {% else %}background-color: #f8d7da; color: #721c24;{% endif %}">

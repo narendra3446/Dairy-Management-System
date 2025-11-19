@@ -170,6 +170,7 @@
 {% endblock %}
 
 {% block content %}
+
 <div class="dashboard-header">
     <h1>🥛 Your Dairy Store</h1>
     <p>Browse our fresh dairy products and place your order</p>
@@ -177,6 +178,7 @@
 
 <div class="product-grid">
     {% set icons = {'Milk': '🥛', 'Yogurt': '🍨', 'Buttermilk': '🥤', 'Paneer': '🧀', 'Ghee': '✨', 'Cheese': '🧀'} %}
+
     {% for product in products %}
     <div class="product-card">
         <div class="product-card-header">
@@ -187,10 +189,17 @@
             <p>{{ product.description }}</p>
             <div class="product-price">₹{{ product.price }}/{{ product.unit }}</div>
             <div class="product-stock">📦 Stock: {{ product.stock }} {{ product.unit }} available</div>
-            
+
             <div class="product-actions">
-                <input type="number" min="1" max="{{ product.stock }}" value="1" class="quantity-input" data-product-id="{{ product.id }}">
-                <button class="btn btn-primary" onclick="addToCart({{ product.id }}, this)" {% if product.stock == 0 %}disabled{% endif %}>Add to Cart</button>
+                <input type="number" min="1" max="{{ product.stock }}" value="1"
+                       class="quantity-input" data-product-id="{{ product._id }}">
+
+                <!-- FIXED: _id converted to string -->
+                <button class="btn btn-primary"
+                        onclick="addToCart('{{ product._id }}', this)"
+                        {% if product.stock == 0 %}disabled{% endif %}>
+                    Add to Cart
+                </button>
             </div>
         </div>
     </div>
@@ -200,10 +209,8 @@
 <div class="cart-section">
     <div class="cart-card">
         <h2>🛒 Shopping Cart</h2>
-        
-        <div id="cart-empty" class="cart-empty" style="display: none;">
-            Your cart is empty. Start shopping!
-        </div>
+
+        <div id="cart-empty" class="cart-empty">Your cart is empty. Start shopping!</div>
 
         <table class="table" id="cart-table" style="display: none;">
             <thead>
@@ -215,8 +222,7 @@
                     <th>Action</th>
                 </tr>
             </thead>
-            <tbody id="cart-items">
-            </tbody>
+            <tbody id="cart-items"></tbody>
         </table>
 
         <div class="cart-total-section">
@@ -229,12 +235,23 @@
 </div>
 
 <script>
+    // FIXED: Convert products to safe JSON
+    const allProducts = {{ products|tojson|safe }};
+
     let cart = [];
 
     function addToCart(productId, button) {
+        productId = productId.toString();
+
         const input = button.parentElement.querySelector('.quantity-input');
         const quantity = parseFloat(input.value);
-        const product = {{ products|tojson }}.find(p => p.id === productId);
+
+        const product = allProducts.find(p => p._id === productId);
+
+        if (!product) {
+            alert("Product not found!");
+            return;
+        }
 
         if (quantity > product.stock) {
             alert('Not enough stock available');
@@ -242,6 +259,7 @@
         }
 
         const existing = cart.find(item => item.product_id === productId);
+
         if (existing) {
             existing.quantity += quantity;
         } else {
@@ -311,9 +329,7 @@
 
         fetch('/user/place-order', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items: cart })
         })
         .then(response => response.json())
@@ -332,4 +348,5 @@
 
     updateCartDisplay();
 </script>
+
 {% endblock %}

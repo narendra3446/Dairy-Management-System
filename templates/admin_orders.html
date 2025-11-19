@@ -22,13 +22,16 @@
     <tbody>
         {% for order in orders %}
         <tr>
-            <td>#{{ order.id }}</td>
-            <td>{{ order.user.username }}</td>
-            <td>{{ order.user.email }}</td>
+            <td>#{{ order._id }}</td>
+
+            <td>{{ order.user_data.username if order.user_data else 'Unknown' }}</td>
+            <td>{{ order.user_data.email if order.user_data else 'Unknown' }}</td>
+
             <td>₹{{ order.total_amount }}</td>
-            <td>{{ order.order_items|length }}</td>
+            <td>{{ order.order_items | length }}</td>
+
             <td>
-                <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline; margin: 0;">
+                <form method="POST" action="{{ url_for('update_order_status', order_id=order._id) }}" style="display: inline; margin: 0;">
                     <select name="status" onchange="this.form.submit()" style="padding: 0.25rem 0.5rem;">
                         <option value="Pending" {% if order.status == 'Pending' %}selected{% endif %}>Pending</option>
                         <option value="Completed" {% if order.status == 'Completed' %}selected{% endif %}>Completed</option>
@@ -36,7 +39,9 @@
                     </select>
                 </form>
             </td>
+
             <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
+
             <td>
                 <details>
                     <summary style="cursor: pointer; color: #667eea;">View Details</summary>
@@ -45,14 +50,14 @@
                             <tr>
                                 <th>Product</th>
                                 <th>Qty</th>
-                                <th>Price</th>
+                                <th>Subtotal</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in order.order_items %}
                             <tr>
-                                <td>{{ item.product.name }}</td>
-                                <td>{{ item.quantity }} {{ item.product.unit }}</td>
+                                <td>{{ item.product_name }}</td>
+                                <td>{{ item.quantity }} {{ item.product_unit }}</td>
                                 <td>₹{{ item.subtotal }}</td>
                             </tr>
                             {% endfor %}
