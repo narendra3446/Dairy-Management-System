@@ -588,8 +588,12 @@ def update_order_status(order_id):
 @admin_required
 def admin_users():
     users = list(db.users.find())
-    # Convert string timestamps to datetime objects (safe conversion)
+
     for user in users:
+        # Convert ObjectId to string
+        user["_id"] = str(user["_id"])
+
+        # Convert created_at
         created_at = user.get("created_at")
         if isinstance(created_at, str):
             try:
@@ -597,9 +601,15 @@ def admin_users():
             except ValueError:
                 try:
                     user["created_at"] = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-                except Exception:
+                except:
                     pass
+
+        # ---- FIX: Count orders for this user ----
+        user_orders = list(db.orders.find({"user_id": user["_id"]}))
+        user["orders"] = user_orders  # this makes user.orders|length work
+
     return render_template('admin_users.html', users=users)
+
 
 
 @app.route('/admin/reports')

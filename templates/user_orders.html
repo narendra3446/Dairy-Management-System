@@ -20,7 +20,7 @@
     <tbody>
         {% for order in orders %}
         <tr>
-            <td>#{{ order.id }}</td>
+            <td>#{{ order._id }}</td>
             <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
             <td>₹{{ order.total_amount }}</td>
             <td>
@@ -32,7 +32,7 @@
                 </span>
             </td>
             <td>{{ order.delivery_date.strftime('%d-%m-%Y') if order.delivery_date else 'N/A' }}</td>
-            <td><a href="{{ url_for('user_receipt', order_id=order.id) }}" class="btn btn-primary" style="text-decoration: none;">View Receipt</a></td>
+            <td><a href="{{ url_for('user_receipt', order_id=order._id) }}" class="btn btn-primary" style="text-decoration: none;">View Receipt</a></td>
         </tr>
         {% endfor %}
     </tbody>
