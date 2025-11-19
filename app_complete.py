@@ -18,7 +18,12 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
-app.config['MONGO_URI'] = os.getenv('MONGO_URI', 'mongodb://localhost:27017/dairy_db')
+ENV = os.getenv("ENV", "development")
+
+if ENV == "production":
+    app.config["MONGO_URI"] = os.getenv("MONGO_URI") 
+else:
+    app.config["MONGO_URI"] = "mongodb://127.0.0.1:27017/dairy_management_db"
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dairy-management-secret-key-2025')
 
 app.config['JSON_SORT_KEYS'] = False

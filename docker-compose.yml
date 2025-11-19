@@ -5,11 +5,8 @@ services:
     build: .
     ports:
       - "5000:5000"
-    environment:
-      - ENV=production
-      - SECRET_KEY=your-secret-key-change-in-production
-      - DATABASE_URL=sqlite:///dairy_management.db
-      - FLASK_DEBUG=0
+    env_file:
+      - .env
     volumes:
       - ./instance:/app/instance
     restart: unless-stopped
